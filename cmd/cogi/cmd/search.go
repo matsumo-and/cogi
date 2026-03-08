@@ -9,7 +9,6 @@ import (
 	"github.com/matsumo_and/cogi/internal/db"
 	"github.com/matsumo_and/cogi/internal/embedding"
 	"github.com/matsumo_and/cogi/internal/search"
-	"github.com/matsumo_and/cogi/internal/vector"
 	"github.com/spf13/cobra"
 )
 
@@ -203,29 +202,9 @@ var searchSemanticCmd = &cobra.Command{
 			cfg.Embedding.Dimension,
 		)
 
-		// Initialize Qdrant vector client
-		vectorClient, err := vector.NewClient(
-			cfg.Qdrant.Endpoint,
-			cfg.Qdrant.CollectionName,
-			cfg.Embedding.Dimension,
-		)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error connecting to Qdrant: %v\n", err)
-			fmt.Println("\n⚠️  Make sure Qdrant is running:")
-			fmt.Println("   docker run -p 6333:6333 qdrant/qdrant")
-			os.Exit(1)
-		}
-		defer vectorClient.Close()
-
-		// Ensure collection exists
+		// Create semantic searcher (SQLite-based vector search)
 		ctx := context.Background()
-		if err := vectorClient.EnsureCollection(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Error ensuring Qdrant collection: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Create semantic searcher
-		searcher := search.NewSemanticSearcher(database, vectorClient, embedClient)
+		searcher := search.NewSemanticSearcher(database, embedClient)
 
 		// Perform semantic search
 		results, err := searcher.Search(ctx, search.SemanticSearchOptions{

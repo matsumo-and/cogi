@@ -2,28 +2,51 @@ package db
 
 import (
 	"database/sql"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"time"
 )
 
 // Embedding represents an embedding entry in the database
 type Embedding struct {
-	ID            int64
-	SymbolID      int64
-	Granularity   string
-	QdrantPointID string
-	ContentHash   string
-	CreatedAt     time.Time
+	ID          int64
+	SymbolID    int64
+	Granularity string
+	Vector      []float32
+	Dimension   int
+	ContentHash string
+	CreatedAt   time.Time
+}
+
+// vectorToBytes converts a float32 slice to bytes
+func vectorToBytes(vector []float32) []byte {
+	bytes := make([]byte, len(vector)*4) // 4 bytes per float32
+	for i, v := range vector {
+		binary.LittleEndian.PutUint32(bytes[i*4:], math.Float32bits(v))
+	}
+	return bytes
+}
+
+// bytesToVector converts bytes to a float32 slice
+func bytesToVector(bytes []byte) []float32 {
+	vector := make([]float32, len(bytes)/4)
+	for i := range vector {
+		bits := binary.LittleEndian.Uint32(bytes[i*4:])
+		vector[i] = math.Float32frombits(bits)
+	}
+	return vector
 }
 
 // CreateEmbedding inserts a new embedding record
-func (db *DB) CreateEmbedding(symbolID int64, granularity, qdrantPointID, contentHash string) (int64, error) {
+func (db *DB) CreateEmbedding(symbolID int64, granularity string, vector []float32, contentHash string) (int64, error) {
 	now := time.Now().Unix()
+	vectorBytes := vectorToBytes(vector)
 
 	result, err := db.Exec(`
-		INSERT INTO embeddings (symbol_id, granularity, qdrant_point_id, content_hash, created_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, symbolID, granularity, qdrantPointID, contentHash, now)
+		INSERT INTO embeddings (symbol_id, granularity, vector, dimension, content_hash, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, symbolID, granularity, vectorBytes, len(vector), contentHash, now)
 
 	if err != nil {
 		return 0, fmt.Errorf("failed to create embedding: %w", err)
@@ -41,9 +64,10 @@ func (db *DB) CreateEmbedding(symbolID int64, granularity, qdrantPointID, conten
 func (db *DB) GetEmbeddingBySymbolID(symbolID int64, granularity string) (*Embedding, error) {
 	var e Embedding
 	var createdAt int64
+	var vectorBytes []byte
 
 	query := `
-		SELECT id, symbol_id, granularity, qdrant_point_id, content_hash, created_at
+		SELECT id, symbol_id, granularity, vector, dimension, content_hash, created_at
 		FROM embeddings
 		WHERE symbol_id = ?
 	`
@@ -60,7 +84,8 @@ func (db *DB) GetEmbeddingBySymbolID(symbolID int64, granularity string) (*Embed
 		&e.ID,
 		&e.SymbolID,
 		&e.Granularity,
-		&e.QdrantPointID,
+		&vectorBytes,
+		&e.Dimension,
 		&e.ContentHash,
 		&createdAt,
 	)
@@ -72,6 +97,7 @@ func (db *DB) GetEmbeddingBySymbolID(symbolID int64, granularity string) (*Embed
 		return nil, fmt.Errorf("failed to get embedding: %w", err)
 	}
 
+	e.Vector = bytesToVector(vectorBytes)
 	e.CreatedAt = time.Unix(createdAt, 0)
 	return &e, nil
 }
@@ -83,7 +109,7 @@ func (db *DB) GetEmbeddingsBySymbolIDs(symbolIDs []int64) ([]Embedding, error) {
 	}
 
 	query := `
-		SELECT id, symbol_id, granularity, qdrant_point_id, content_hash, created_at
+		SELECT id, symbol_id, granularity, vector, dimension, content_hash, created_at
 		FROM embeddings
 		WHERE symbol_id IN (` + placeholders(len(symbolIDs)) + `)
 	`
@@ -103,12 +129,14 @@ func (db *DB) GetEmbeddingsBySymbolIDs(symbolIDs []int64) ([]Embedding, error) {
 	for rows.Next() {
 		var e Embedding
 		var createdAt int64
+		var vectorBytes []byte
 
 		err := rows.Scan(
 			&e.ID,
 			&e.SymbolID,
 			&e.Granularity,
-			&e.QdrantPointID,
+			&vectorBytes,
+			&e.Dimension,
 			&e.ContentHash,
 			&createdAt,
 		)
@@ -116,6 +144,7 @@ func (db *DB) GetEmbeddingsBySymbolIDs(symbolIDs []int64) ([]Embedding, error) {
 			return nil, fmt.Errorf("failed to scan embedding: %w", err)
 		}
 
+		e.Vector = bytesToVector(vectorBytes)
 		e.CreatedAt = time.Unix(createdAt, 0)
 		embeddings = append(embeddings, e)
 	}
@@ -145,48 +174,70 @@ func (db *DB) DeleteEmbeddingsBySymbolID(symbolID int64) error {
 	return nil
 }
 
-// GetEmbeddingByQdrantID retrieves an embedding by Qdrant point ID
-func (db *DB) GetEmbeddingByQdrantID(qdrantPointID string) (*Embedding, error) {
-	var e Embedding
-	var createdAt int64
-
-	err := db.QueryRow(`
-		SELECT id, symbol_id, granularity, qdrant_point_id, content_hash, created_at
-		FROM embeddings
-		WHERE qdrant_point_id = ?
-	`, qdrantPointID).Scan(
-		&e.ID,
-		&e.SymbolID,
-		&e.Granularity,
-		&e.QdrantPointID,
-		&e.ContentHash,
-		&createdAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get embedding: %w", err)
-	}
-
-	e.CreatedAt = time.Unix(createdAt, 0)
-	return &e, nil
-}
-
 // UpdateEmbedding updates an existing embedding
-func (db *DB) UpdateEmbedding(id int64, qdrantPointID, contentHash string) error {
+func (db *DB) UpdateEmbedding(id int64, vector []float32, contentHash string) error {
+	vectorBytes := vectorToBytes(vector)
 	_, err := db.Exec(`
 		UPDATE embeddings
-		SET qdrant_point_id = ?, content_hash = ?
+		SET vector = ?, dimension = ?, content_hash = ?
 		WHERE id = ?
-	`, qdrantPointID, contentHash, id)
+	`, vectorBytes, len(vector), contentHash, id)
 
 	if err != nil {
 		return fmt.Errorf("failed to update embedding: %w", err)
 	}
 
 	return nil
+}
+
+// GetAllEmbeddings retrieves all embeddings with optional granularity filter
+func (db *DB) GetAllEmbeddings(granularity string) ([]Embedding, error) {
+	query := `
+		SELECT id, symbol_id, granularity, vector, dimension, content_hash, created_at
+		FROM embeddings
+	`
+	args := []interface{}{}
+
+	if granularity != "" {
+		query += " WHERE granularity = ?"
+		args = append(args, granularity)
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query embeddings: %w", err)
+	}
+	defer rows.Close()
+
+	embeddings := []Embedding{}
+	for rows.Next() {
+		var e Embedding
+		var createdAt int64
+		var vectorBytes []byte
+
+		err := rows.Scan(
+			&e.ID,
+			&e.SymbolID,
+			&e.Granularity,
+			&vectorBytes,
+			&e.Dimension,
+			&e.ContentHash,
+			&createdAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan embedding: %w", err)
+		}
+
+		e.Vector = bytesToVector(vectorBytes)
+		e.CreatedAt = time.Unix(createdAt, 0)
+		embeddings = append(embeddings, e)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating embeddings: %w", err)
+	}
+
+	return embeddings, nil
 }
 
 // Helper function to generate SQL placeholders

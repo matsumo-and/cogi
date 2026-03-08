@@ -96,12 +96,13 @@ CREATE TABLE IF NOT EXISTS ownership (
 CREATE INDEX IF NOT EXISTS idx_ownership_file ON ownership(file_id);
 CREATE INDEX IF NOT EXISTS idx_ownership_author ON ownership(author_name);
 
--- Vector Index メタデータ（Qdrant同期用）
+-- Vector Index（ベクトル埋め込み）
 CREATE TABLE IF NOT EXISTS embeddings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol_id INTEGER NOT NULL,
     granularity TEXT NOT NULL, -- 'class' or 'function'
-    qdrant_point_id TEXT NOT NULL UNIQUE, -- QdrantのPoint UUID
+    vector BLOB NOT NULL, -- ベクトル（float32配列をバイナリ化）
+    dimension INTEGER NOT NULL, -- ベクトル次元数
     content_hash TEXT NOT NULL, -- 埋め込み対象コンテンツのハッシュ
     created_at INTEGER NOT NULL,
     FOREIGN KEY (symbol_id) REFERENCES symbols(id) ON DELETE CASCADE
@@ -109,7 +110,6 @@ CREATE TABLE IF NOT EXISTS embeddings (
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_symbol ON embeddings(symbol_id);
 CREATE INDEX IF NOT EXISTS idx_embeddings_granularity ON embeddings(granularity);
-CREATE INDEX IF NOT EXISTS idx_embeddings_qdrant_id ON embeddings(qdrant_point_id);
 
 -- 全文検索用仮想テーブル（FTS5）
 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(

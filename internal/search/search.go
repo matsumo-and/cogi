@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/matsumo_and/cogi/internal/db"
 	"github.com/matsumo_and/cogi/internal/embedding"
-	"github.com/matsumo_and/cogi/internal/vector"
 )
 
 // Result represents a search result
@@ -27,6 +27,12 @@ type Result struct {
 	CodeBody    string
 	Score       float32 // Relevance score (for semantic search or BM25)
 	Snippet     string  // Highlighted snippet
+}
+
+// scoredResult represents a symbol ID with a similarity score
+type scoredResult struct {
+	symbolID int64
+	score    float32
 }
 
 // KeywordSearcher performs keyword-based search using FTS5
@@ -116,17 +122,15 @@ func (s *KeywordSearcher) Search(ctx context.Context, opts KeywordSearchOptions)
 
 // SemanticSearcher performs semantic search using vector similarity
 type SemanticSearcher struct {
-	db            *db.DB
-	vectorClient  *vector.Client
-	embedClient   embedding.Client
+	db          *db.DB
+	embedClient embedding.Client
 }
 
 // NewSemanticSearcher creates a new semantic searcher
-func NewSemanticSearcher(database *db.DB, vectorClient *vector.Client, embedClient embedding.Client) *SemanticSearcher {
+func NewSemanticSearcher(database *db.DB, embedClient embedding.Client) *SemanticSearcher {
 	return &SemanticSearcher{
-		db:           database,
-		vectorClient: vectorClient,
-		embedClient:  embedClient,
+		db:          database,
+		embedClient: embedClient,
 	}
 }
 
@@ -156,37 +160,17 @@ func (s *SemanticSearcher) Search(ctx context.Context, opts SemanticSearchOption
 		return nil, fmt.Errorf("failed to generate embedding: %w", err)
 	}
 
-	// Build filter for Qdrant
-	filter := make(map[string]interface{})
-	if opts.Granularity != "" {
-		filter["granularity"] = opts.Granularity
-	}
-	if opts.Language != "" {
-		filter["language"] = opts.Language
-	}
-	if opts.SymbolKind != "" {
-		filter["symbol_kind"] = opts.SymbolKind
-	}
-
-	// Perform vector search
-	searchResults, err := s.vectorClient.Search(ctx, embed.Vector, opts.Limit*2, filter) // Get more results for filtering
+	// Get all embeddings from database with optional granularity filter
+	embeddings, err := s.db.GetAllEmbeddings(opts.Granularity)
 	if err != nil {
-		return nil, fmt.Errorf("failed to perform vector search: %w", err)
+		return nil, fmt.Errorf("failed to get embeddings: %w", err)
 	}
 
-	if len(searchResults) == 0 {
+	if len(embeddings) == 0 {
 		return []Result{}, nil
 	}
 
-	// Extract symbol IDs
-	symbolIDs := make([]int64, 0, len(searchResults))
-	scoreMap := make(map[int64]float32)
-	for _, sr := range searchResults {
-		symbolIDs = append(symbolIDs, sr.SymbolID)
-		scoreMap[sr.SymbolID] = sr.Score
-	}
-
-	// Fetch symbol details from database
+	// Build symbol details query with filters
 	query := `
 		SELECT
 			s.id,
@@ -204,15 +188,18 @@ func (s *SemanticSearcher) Search(ctx context.Context, opts SemanticSearchOption
 		FROM symbols s
 		JOIN files f ON s.file_id = f.id
 		JOIN repositories r ON f.repository_id = r.id
-		WHERE s.id IN (` + placeholders(len(symbolIDs)) + `)
+		WHERE 1=1
 	`
+	args := []interface{}{}
 
-	args := make([]interface{}, len(symbolIDs))
-	for i, id := range symbolIDs {
-		args[i] = id
+	if opts.Language != "" {
+		query += " AND f.language = ?"
+		args = append(args, opts.Language)
 	}
-
-	// Add repository filter if specified
+	if opts.SymbolKind != "" {
+		query += " AND s.kind = ?"
+		args = append(args, opts.SymbolKind)
+	}
 	if opts.Repository != "" {
 		query += " AND r.name = ?"
 		args = append(args, opts.Repository)
@@ -220,26 +207,53 @@ func (s *SemanticSearcher) Search(ctx context.Context, opts SemanticSearchOption
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch symbol details: %w", err)
+		return nil, fmt.Errorf("failed to fetch symbols: %w", err)
 	}
 	defer rows.Close()
 
-	results, err := scanResults(rows)
+	// Scan all matching symbols
+	symbols, err := scanResults(rows)
 	if err != nil {
 		return nil, err
 	}
 
-	// Apply scores from vector search
-	for i := range results {
-		if score, ok := scoreMap[results[i].SymbolID]; ok {
-			results[i].Score = score
-		}
+	// Create map of symbol ID to symbol
+	symbolMap := make(map[int64]*Result)
+	for i := range symbols {
+		symbolMap[symbols[i].SymbolID] = &symbols[i]
 	}
 
-	// Sort by score and limit
-	sortByScore(results)
-	if len(results) > opts.Limit {
-		results = results[:opts.Limit]
+	// Calculate cosine similarity for each embedding and collect results
+	scoredResults := make([]scoredResult, 0, len(embeddings))
+
+	for _, emb := range embeddings {
+		// Skip if symbol was filtered out
+		if _, ok := symbolMap[emb.SymbolID]; !ok {
+			continue
+		}
+
+		// Calculate cosine similarity
+		score := cosineSimilarity(embed.Vector, emb.Vector)
+		scoredResults = append(scoredResults, scoredResult{
+			symbolID: emb.SymbolID,
+			score:    score,
+		})
+	}
+
+	// Sort by score descending
+	sortScoredResults(scoredResults)
+
+	// Limit and build final results
+	if len(scoredResults) > opts.Limit {
+		scoredResults = scoredResults[:opts.Limit]
+	}
+
+	results := make([]Result, 0, len(scoredResults))
+	for _, sr := range scoredResults {
+		if symbol, ok := symbolMap[sr.symbolID]; ok {
+			symbol.Score = sr.score
+			results = append(results, *symbol)
+		}
 	}
 
 	return results, nil
@@ -474,4 +488,35 @@ func mergeResults(keyword, semantic []Result, kwWeight, semWeight float32) []Res
 	sortByScore(merged)
 
 	return merged
+}
+
+// cosineSimilarity calculates the cosine similarity between two vectors
+func cosineSimilarity(a, b []float32) float32 {
+	if len(a) != len(b) {
+		return 0
+	}
+
+	var dotProduct, normA, normB float32
+	for i := range a {
+		dotProduct += a[i] * b[i]
+		normA += a[i] * a[i]
+		normB += b[i] * b[i]
+	}
+
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+
+	return dotProduct / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))
+}
+
+// sortScoredResults sorts scored results by score descending
+func sortScoredResults(results []scoredResult) {
+	for i := 0; i < len(results); i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[j].score > results[i].score {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
 }

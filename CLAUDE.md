@@ -21,17 +21,19 @@
 
 ## 技術選択の理由
 
-### なぜQdrant？
+### なぜSQLiteベクトル埋め込み？
 
 **選択理由:**
-- メタデータとベクトルを一元管理できる
-- 強力なフィルタリング機能（言語、粒度、リポジトリでフィルタ）
-- ローカル実行可能（組み込みモード）
-- スケーラビリティが高い
+- すでにSQLiteを使っているため追加依存なし（完全ローカル）
+- メタデータとベクトルをSQLiteで一元管理
+- 1-20リポジトリ規模なら十分な性能（ブルートフォース検索）
+- シンプルで保守性が高い
+- 別プロセス起動不要
 
 **却下された選択肢:**
-- ❌ **FAISS/HNSWlib**: メタデータ管理が別途必要、フィルタリングが複雑
-- ❌ **SQLite + sqlite-vss**: 大規模データに不向き、パフォーマンスが劣る
+- ❌ **Qdrant**: 別プロセス起動が必要、1-20リポジトリにはオーバースペック
+- ❌ **FAISS/HNSWlib**: CGo依存が複雑、メタデータ管理が別途必要
+- ❌ **sqlite-vss/sqlite-vec**: 拡張ライブラリの追加が必要
 
 ### なぜSQLite FTS5？
 
@@ -57,26 +59,22 @@
 
 ## アーキテクチャ原則
 
-### ハイブリッドDB構成
+### SQLite統合構成
 
 ```
-SQLite: メタデータ、構造化データ
-  ├─ Symbol Index
+SQLite: すべてをSQLiteで管理
+  ├─ Symbol Index（構造化データ）
   ├─ Call/Import Graph
   ├─ Ownership Index
-  └─ Embeddings メタデータ（Qdrant同期用）
-
-SQLite FTS5: 全文検索
-  └─ symbols_fts（トリガーで自動同期）
-
-Qdrant: ベクトル検索
-  └─ payload（メタデータ + ベクトル）
+  ├─ FTS5（全文検索、トリガーで自動同期）
+  └─ Embeddings（ベクトル埋め込みをBLOBで保存）
 ```
 
 **設計意図:**
-- 各DBを適材適所で使う
-- SQLiteで構造化データと全文検索を統合
-- Qdrantでセマンティック検索とメタデータフィルタリング
+- SQLite一つで完結（シンプル、ローカルファースト）
+- BLOBでベクトルを保存、コサイン類似度で検索
+- メタデータとベクトルの完全な一貫性
+- 1-20リポジトリならブルートフォースで十分高速
 
 ### 複数粒度のベクトルインデックス
 
@@ -99,12 +97,12 @@ Qdrant: ベクトル検索
 **方針:**
 - タイムスタンプベースの差分検知
 - 変更ファイルのみ再パース
-- SQLiteとQdrantの両方を部分更新
+- SQLiteの部分更新（embeddings含む）
 
 **実装時の注意:**
 - ファイル削除時のクリーンアップを忘れない
 - content_hashで実質的な変更を検知
-- Qdrantのpoint削除とSQLiteの同期を保つ
+- トランザクションで一貫性を保つ
 
 ---
 
@@ -114,9 +112,10 @@ Qdrant: ベクトル検索
 
 **必須最適化:**
 - ✅ 並列処理: ファイル/リポジトリ単位でゴルーチン活用
-- ✅ バッチ処理: Ollama埋め込み、Qdrantアップサートをバッチ化
+- ✅ バッチ処理: Ollama埋め込み生成、SQLiteバッチINSERTをバッチ化
 - ✅ SQLite設定: WALモード、適切なcache_size
 - ✅ FTS5最適化: `PRAGMA optimize`で定期的に実行
+- ✅ ベクトル検索: 1-20リポジトリならブルートフォースで十分
 
 **パフォーマンス目標:**
 - インデックス構築: 最長5分（フルスキャン）
@@ -126,7 +125,7 @@ Qdrant: ベクトル検索
 ### データ整合性
 
 **重要:**
-- SQLiteとQdrantの同期を常に保つ
+- すべてSQLiteで管理されるため一貫性が保証される
 - トランザクションを適切に使う
 - エラー時のロールバック戦略
 
@@ -183,16 +182,6 @@ make build
 - Ollamaが起動していない場合は明確なエラーメッセージ
 - セマンティック検索が無効でもキーワード検索は動作すること
 
-### Qdrant管理
-
-**起動モード:**
-- **組み込みモード（推奨）**: CLIがQdrantプロセスを自動起動・管理
-- **外部モード**: ユーザーが手動起動
-
-**コレクション管理:**
-- 初回起動時に自動作成
-- スキーマ変更時のマイグレーション戦略を考慮
-
 ---
 
 ## コーディング規約
@@ -204,12 +193,12 @@ cogi/
 ├── cmd/
 │   └── cogi/          # CLIエントリーポイント
 ├── internal/
-│   ├── db/            # SQLite関連
+│   ├── db/            # SQLite関連（FTS5 + ベクトル埋め込み）
 │   ├── parser/        # Tree-sitterパーサー
 │   ├── indexer/       # インデックス構築
-│   ├── search/        # 検索エンジン
+│   ├── search/        # 検索エンジン（キーワード + セマンティック）
 │   ├── graph/         # Call/Import Graph
-│   ├── vector/        # Qdrant連携
+│   ├── vector/        # ベクトル類似度計算
 │   ├── embedding/     # Ollama連携
 │   └── config/        # 設定管理
 ├── pkg/               # 公開API（将来的に）
@@ -229,7 +218,7 @@ cogi/
 
 **必須テスト:**
 - ユニットテスト: 各コンポーネント
-- 統合テスト: DB、Qdrant、Ollama連携
+- 統合テスト: DB、Ollama連携
 - E2Eテスト: CLIコマンド
 
 **テストデータ:**
@@ -305,7 +294,7 @@ Semantic Versioning 2.0.0に従う:
 
 - [Tree-sitter Documentation](https://tree-sitter.github.io/tree-sitter/)
 - [SQLite FTS5](https://www.sqlite.org/fts5.html)
-- [Qdrant Documentation](https://qdrant.tech/documentation/)
+- [SQLite BLOB](https://www.sqlite.org/datatype3.html)
 - [Ollama Documentation](https://ollama.ai/)
 
 ### Go関連
