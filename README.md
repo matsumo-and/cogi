@@ -3,9 +3,8 @@
 > **Cogi**
 > コードベースを探索・理解する Code Intelligence Engine
 
-[![CI](https://github.com/yourusername/cogi/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/cogi/actions/workflows/ci.yml)
+[![CI](https://github.com/matsumo-and/cogi/actions/workflows/ci.yml/badge.svg)](https://github.com/matsumo-and/cogi/actions/workflows/ci.yml)
 [![Status](https://img.shields.io/badge/status-development-yellow)](https://github.com/yourusername/cogi)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.21+-blue)](https://go.dev/)
 
 ## 概要
