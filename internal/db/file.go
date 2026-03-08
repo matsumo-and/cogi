@@ -128,6 +128,26 @@ func (db *DB) ListFilesByRepository(repositoryID int64) ([]*File, error) {
 	}
 	defer rows.Close()
 
+	return scanFiles(rows)
+}
+
+// ListFiles retrieves all files across all repositories
+func (db *DB) ListFiles() ([]*File, error) {
+	rows, err := db.Query(`
+		SELECT id, repository_id, path, language, last_modified, file_hash, indexed_at
+		FROM files
+		ORDER BY path
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list files: %w", err)
+	}
+	defer rows.Close()
+
+	return scanFiles(rows)
+}
+
+// scanFiles is a helper function to scan file rows
+func scanFiles(rows *sql.Rows) ([]*File, error) {
 	var files []*File
 	for rows.Next() {
 		var file File

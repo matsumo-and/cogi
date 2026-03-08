@@ -39,6 +39,30 @@ type Symbol struct {
 	CodeBody    string
 }
 
+// CallSite represents a function/method call
+type CallSite struct {
+	CallerName string // Name of the calling function/method
+	CalleeName string // Name of the called function/method
+	Line       int
+	Column     int
+	CallType   string // direct, method, indirect
+}
+
+// Import represents an import statement
+type Import struct {
+	ImportPath      string
+	ImportType      string   // named, default, wildcard
+	ImportedSymbols []string // List of imported symbols
+	LineNumber      int
+}
+
+// ParseResult contains all parsed information from a file
+type ParseResult struct {
+	Symbols   []*Symbol
+	CallSites []*CallSite
+	Imports   []*Import
+}
+
 // Parser wraps a tree-sitter parser
 type Parser struct {
 	parser *sitter.Parser
@@ -69,8 +93,8 @@ func New(lang Language) (*Parser, error) {
 	}, nil
 }
 
-// ParseFile parses a file and extracts symbols
-func (p *Parser) ParseFile(ctx context.Context, filePath string) ([]*Symbol, error) {
+// ParseFile parses a file and extracts symbols, calls, and imports
+func (p *Parser) ParseFile(ctx context.Context, filePath string) (*ParseResult, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
@@ -79,8 +103,8 @@ func (p *Parser) ParseFile(ctx context.Context, filePath string) ([]*Symbol, err
 	return p.Parse(ctx, content)
 }
 
-// Parse parses source code and extracts symbols
-func (p *Parser) Parse(ctx context.Context, sourceCode []byte) ([]*Symbol, error) {
+// Parse parses source code and extracts symbols, calls, and imports
+func (p *Parser) Parse(ctx context.Context, sourceCode []byte) (*ParseResult, error) {
 	tree, err := p.parser.ParseCtx(ctx, nil, sourceCode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse: %w", err)
@@ -89,19 +113,24 @@ func (p *Parser) Parse(ctx context.Context, sourceCode []byte) ([]*Symbol, error
 
 	root := tree.RootNode()
 
-	var symbols []*Symbol
+	result := &ParseResult{
+		Symbols:   []*Symbol{},
+		CallSites: []*CallSite{},
+		Imports:   []*Import{},
+	}
+
 	switch p.lang {
 	case LangGo:
-		symbols = p.parseGo(root, sourceCode)
+		p.parseGo(root, sourceCode, result)
 	case LangTypeScript, LangJavaScript:
-		symbols = p.parseTypeScript(root, sourceCode)
+		p.parseTypeScript(root, sourceCode, result)
 	case LangPython:
-		symbols = p.parsePython(root, sourceCode)
+		p.parsePython(root, sourceCode, result)
 	default:
 		return nil, fmt.Errorf("unsupported language: %s", p.lang)
 	}
 
-	return symbols, nil
+	return result, nil
 }
 
 // DetectLanguage detects the programming language from file extension

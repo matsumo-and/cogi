@@ -7,32 +7,148 @@ import (
 )
 
 // parsePython parses Python source code
-func (p *Parser) parsePython(root *sitter.Node, sourceCode []byte) []*Symbol {
-	var symbols []*Symbol
+func (p *Parser) parsePython(root *sitter.Node, sourceCode []byte, result *ParseResult) {
+	// Extract imports first
+	p.extractPythonImports(root, sourceCode, result)
 
+	// Walk the tree for symbols and calls
 	cursor := sitter.NewTreeCursor(root)
 	defer cursor.Close()
 
-	p.walkPythonTree(cursor, sourceCode, "", &symbols)
-
-	return symbols
+	p.walkPythonTree(cursor, sourceCode, "", result)
 }
 
-// walkPythonTree walks the Python AST tree
-func (p *Parser) walkPythonTree(cursor *sitter.TreeCursor, sourceCode []byte, scope string, symbols *[]*Symbol) {
+// extractPythonImports extracts import statements from Python code
+func (p *Parser) extractPythonImports(root *sitter.Node, sourceCode []byte, result *ParseResult) {
+	cursor := sitter.NewTreeCursor(root)
+	defer cursor.Close()
+
+	p.findPythonImports(cursor, sourceCode, result)
+}
+
+// findPythonImports recursively finds import statements
+func (p *Parser) findPythonImports(cursor *sitter.TreeCursor, sourceCode []byte, result *ParseResult) {
 	node := cursor.CurrentNode()
 
 	switch node.Type() {
-	case "function_definition":
-		p.parsePythonFunction(node, sourceCode, scope, symbols)
-	case "class_definition":
-		p.parsePythonClass(node, sourceCode, scope, symbols)
+	case "import_statement":
+		p.parsePythonImportStatement(node, sourceCode, result)
+	case "import_from_statement":
+		p.parsePythonImportFromStatement(node, sourceCode, result)
 	}
 
 	// Recurse into children
 	if cursor.GoToFirstChild() {
 		for {
-			p.walkPythonTree(cursor, sourceCode, scope, symbols)
+			p.findPythonImports(cursor, sourceCode, result)
+			if !cursor.GoToNextSibling() {
+				break
+			}
+		}
+		cursor.GoToParent()
+	}
+}
+
+// parsePythonImportStatement parses: import module [as alias]
+func (p *Parser) parsePythonImportStatement(node *sitter.Node, sourceCode []byte, result *ParseResult) {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child.Type() == "dotted_name" || child.Type() == "aliased_import" {
+			importPath := ""
+			importType := "default"
+			var importedSymbols []string
+
+			if child.Type() == "dotted_name" {
+				importPath = getNodeText(child, sourceCode)
+			} else if child.Type() == "aliased_import" {
+				// import X as Y
+				nameNode := findChildByType(child, "dotted_name")
+				if nameNode != nil {
+					importPath = getNodeText(nameNode, sourceCode)
+				}
+				aliasNode := findChildByType(child, "identifier")
+				if aliasNode != nil {
+					importedSymbols = append(importedSymbols, getNodeText(aliasNode, sourceCode))
+					importType = "named"
+				}
+			}
+
+			if importPath != "" {
+				result.Imports = append(result.Imports, &Import{
+					ImportPath:      importPath,
+					ImportType:      importType,
+					ImportedSymbols: importedSymbols,
+					LineNumber:      int(node.StartPoint().Row) + 1,
+				})
+			}
+		}
+	}
+}
+
+// parsePythonImportFromStatement parses: from module import X [, Y] [as Z]
+func (p *Parser) parsePythonImportFromStatement(node *sitter.Node, sourceCode []byte, result *ParseResult) {
+	var importPath string
+	var importType string = "named"
+	var importedSymbols []string
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		childType := child.Type()
+
+		if childType == "dotted_name" {
+			// Module path (appears first before "import" keyword)
+			if importPath == "" {
+				importPath = getNodeText(child, sourceCode)
+			} else {
+				// Named import after "import" keyword
+				importedSymbols = append(importedSymbols, getNodeText(child, sourceCode))
+			}
+		} else if childType == "relative_import" {
+			// Relative import: from . import X or from .. import Y
+			importPath = getNodeText(child, sourceCode)
+		} else if childType == "wildcard_import" {
+			// from module import *
+			importType = "wildcard"
+			importedSymbols = append(importedSymbols, "*")
+		} else if childType == "identifier" {
+			// Named import
+			if importPath != "" { // Only if we already have the module path
+				importedSymbols = append(importedSymbols, getNodeText(child, sourceCode))
+			}
+		} else if childType == "aliased_import" {
+			// from module import X as Y
+			nameNode := child.Child(0)
+			if nameNode != nil {
+				importedSymbols = append(importedSymbols, getNodeText(nameNode, sourceCode))
+			}
+		}
+	}
+
+	if importPath != "" {
+		result.Imports = append(result.Imports, &Import{
+			ImportPath:      importPath,
+			ImportType:      importType,
+			ImportedSymbols: importedSymbols,
+			LineNumber:      int(node.StartPoint().Row) + 1,
+		})
+	}
+}
+
+// walkPythonTree walks the Python AST tree
+func (p *Parser) walkPythonTree(cursor *sitter.TreeCursor, sourceCode []byte, scope string, result *ParseResult) {
+	node := cursor.CurrentNode()
+
+	switch node.Type() {
+	case "function_definition":
+		p.parsePythonFunction(node, sourceCode, scope, result)
+	case "class_definition":
+		p.parsePythonClass(node, sourceCode, scope, result)
+	}
+
+	// Recurse into children
+	if cursor.GoToFirstChild() {
+		for {
+			p.walkPythonTree(cursor, sourceCode, scope, result)
 			if !cursor.GoToNextSibling() {
 				break
 			}
@@ -42,7 +158,7 @@ func (p *Parser) walkPythonTree(cursor *sitter.TreeCursor, sourceCode []byte, sc
 }
 
 // parsePythonFunction parses a Python function definition
-func (p *Parser) parsePythonFunction(node *sitter.Node, sourceCode []byte, scope string, symbols *[]*Symbol) {
+func (p *Parser) parsePythonFunction(node *sitter.Node, sourceCode []byte, scope string, result *ParseResult) {
 	nameNode := findChildByType(node, "identifier")
 	if nameNode == nil {
 		return
@@ -77,6 +193,12 @@ func (p *Parser) parsePythonFunction(node *sitter.Node, sourceCode []byte, scope
 	codeBody := ""
 	if bodyNode != nil {
 		codeBody = getNodeText(bodyNode, sourceCode)
+		// Extract call sites from the body
+		callerName := name
+		if scope != "" {
+			callerName = scope + "." + name
+		}
+		p.extractPythonCallSites(bodyNode, sourceCode, callerName, result)
 	}
 
 	symbol := &Symbol{
@@ -93,11 +215,11 @@ func (p *Parser) parsePythonFunction(node *sitter.Node, sourceCode []byte, scope
 		CodeBody:    codeBody,
 	}
 
-	*symbols = append(*symbols, symbol)
+	result.Symbols = append(result.Symbols, symbol)
 }
 
 // parsePythonClass parses a Python class definition
-func (p *Parser) parsePythonClass(node *sitter.Node, sourceCode []byte, scope string, symbols *[]*Symbol) {
+func (p *Parser) parsePythonClass(node *sitter.Node, sourceCode []byte, scope string, result *ParseResult) {
 	nameNode := findChildByType(node, "identifier")
 	if nameNode == nil {
 		return
@@ -138,7 +260,7 @@ func (p *Parser) parsePythonClass(node *sitter.Node, sourceCode []byte, scope st
 		CodeBody:    codeBody,
 	}
 
-	*symbols = append(*symbols, symbol)
+	result.Symbols = append(result.Symbols, symbol)
 
 	// Parse methods within the class
 	if bodyNode != nil {
@@ -148,13 +270,77 @@ func (p *Parser) parsePythonClass(node *sitter.Node, sourceCode []byte, scope st
 		if cursor.GoToFirstChild() {
 			for {
 				if cursor.CurrentNode().Type() == "function_definition" {
-					p.parsePythonFunction(cursor.CurrentNode(), sourceCode, name, symbols)
+					p.parsePythonFunction(cursor.CurrentNode(), sourceCode, name, result)
 				}
 				if !cursor.GoToNextSibling() {
 					break
 				}
 			}
 		}
+	}
+}
+
+// extractPythonCallSites extracts function/method calls from a code block
+func (p *Parser) extractPythonCallSites(node *sitter.Node, sourceCode []byte, callerName string, result *ParseResult) {
+	cursor := sitter.NewTreeCursor(node)
+	defer cursor.Close()
+
+	p.walkPythonCallSites(cursor, sourceCode, callerName, result)
+}
+
+// walkPythonCallSites walks the AST to find call expressions
+func (p *Parser) walkPythonCallSites(cursor *sitter.TreeCursor, sourceCode []byte, callerName string, result *ParseResult) {
+	node := cursor.CurrentNode()
+
+	if node.Type() == "call" {
+		p.parsePythonCallExpression(node, sourceCode, callerName, result)
+	}
+
+	// Recurse into children
+	if cursor.GoToFirstChild() {
+		for {
+			p.walkPythonCallSites(cursor, sourceCode, callerName, result)
+			if !cursor.GoToNextSibling() {
+				break
+			}
+		}
+		cursor.GoToParent()
+	}
+}
+
+// parsePythonCallExpression parses a call expression
+func (p *Parser) parsePythonCallExpression(node *sitter.Node, sourceCode []byte, callerName string, result *ParseResult) {
+	if node.ChildCount() == 0 {
+		return
+	}
+
+	funcNode := node.Child(0)
+	var calleeName string
+	var callType string = "direct"
+
+	switch funcNode.Type() {
+	case "identifier":
+		// Direct function call: foo()
+		calleeName = getNodeText(funcNode, sourceCode)
+		callType = "direct"
+	case "attribute":
+		// Method call: obj.method()
+		calleeName = getNodeText(funcNode, sourceCode)
+		callType = "method"
+	default:
+		// Other complex expressions
+		calleeName = getNodeText(funcNode, sourceCode)
+		callType = "indirect"
+	}
+
+	if calleeName != "" {
+		result.CallSites = append(result.CallSites, &CallSite{
+			CallerName: callerName,
+			CalleeName: calleeName,
+			Line:       int(node.StartPoint().Row) + 1,
+			Column:     int(node.StartPoint().Column) + 1,
+			CallType:   callType,
+		})
 	}
 }
 
@@ -167,8 +353,8 @@ func extractPythonSignature(node *sitter.Node, sourceCode []byte) string {
 
 		// Include def keyword, name, parameters, and return type
 		if nodeType == "def" || nodeType == "identifier" ||
-		   nodeType == "parameters" || nodeType == "->" ||
-		   nodeType == "type" {
+			nodeType == "parameters" || nodeType == "->" ||
+			nodeType == "type" {
 			signature += getNodeText(child, sourceCode) + " "
 		}
 
@@ -189,7 +375,7 @@ func extractPythonClassSignature(node *sitter.Node, sourceCode []byte) string {
 
 		// Include class keyword, name, and argument list (base classes)
 		if nodeType == "class" || nodeType == "identifier" ||
-		   nodeType == "argument_list" {
+			nodeType == "argument_list" {
 			signature += getNodeText(child, sourceCode) + " "
 		}
 

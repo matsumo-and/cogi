@@ -208,10 +208,14 @@ func (idx *Indexer) indexFile(ctx context.Context, repoID int64, repoPath, fileP
 			return nil
 		}
 
-		// File has changed, delete old symbols
+		// File has changed, delete old data
 		if err := idx.db.DeleteSymbolsByFile(existingFile.ID); err != nil {
 			return fmt.Errorf("failed to delete old symbols: %w", err)
 		}
+		if err := idx.db.DeleteImportGraphByFile(existingFile.ID); err != nil {
+			return fmt.Errorf("failed to delete old import graph: %w", err)
+		}
+		// Note: Call graph is deleted via CASCADE when symbols are deleted
 
 		// Update file record
 		if err := idx.db.UpdateFile(existingFile.ID, fileHash, fileInfo.ModTime()); err != nil {
@@ -234,13 +238,14 @@ func (idx *Indexer) indexFile(ctx context.Context, repoID int64, repoPath, fileP
 		return fmt.Errorf("failed to create parser: %w", err)
 	}
 
-	symbols, err := p.ParseFile(ctx, filePath)
+	parseResult, err := p.ParseFile(ctx, filePath)
 	if err != nil {
 		return fmt.Errorf("failed to parse file: %w", err)
 	}
 
-	// Insert symbols into database
-	for _, sym := range symbols {
+	// Insert symbols into database and build symbol name to ID mapping
+	symbolNameToID := make(map[string]int64)
+	for _, sym := range parseResult.Symbols {
 		dbSymbol := &db.Symbol{
 			FileID:      fileID,
 			Name:        sym.Name,
@@ -256,9 +261,87 @@ func (idx *Indexer) indexFile(ctx context.Context, repoID int64, repoPath, fileP
 			CodeBody:    sym.CodeBody,
 		}
 
-		_, err := idx.db.CreateSymbol(dbSymbol)
+		symbolID, err := idx.db.CreateSymbol(dbSymbol)
 		if err != nil {
 			return fmt.Errorf("failed to create symbol: %w", err)
+		}
+
+		// Build mapping for call graph resolution
+		fullName := sym.Name
+		if sym.Scope != "" {
+			fullName = sym.Scope + "." + sym.Name
+		}
+		symbolNameToID[fullName] = symbolID
+		symbolNameToID[sym.Name] = symbolID // Also map just the name
+	}
+
+	// Insert import graph entries
+	if len(parseResult.Imports) > 0 {
+		var importGraphs []*db.ImportGraph
+		for _, imp := range parseResult.Imports {
+			importedSymbolsJSON := ""
+			if len(imp.ImportedSymbols) > 0 {
+				// Simple JSON array encoding
+				importedSymbolsJSON = `["` + strings.Join(imp.ImportedSymbols, `","`) + `"]`
+			}
+
+			importGraphs = append(importGraphs, &db.ImportGraph{
+				FileID:          fileID,
+				ImportPath:      imp.ImportPath,
+				ImportType:      imp.ImportType,
+				ImportedSymbols: importedSymbolsJSON,
+				LineNumber:      imp.LineNumber,
+			})
+		}
+
+		if err := idx.db.BatchCreateImportGraph(importGraphs); err != nil {
+			return fmt.Errorf("failed to create import graph: %w", err)
+		}
+	}
+
+	// Insert call graph entries
+	if len(parseResult.CallSites) > 0 {
+		var callGraphs []*db.CallGraph
+		for _, call := range parseResult.CallSites {
+			// Try to resolve caller symbol ID
+			callerID, ok := symbolNameToID[call.CallerName]
+			if !ok {
+				// Try without scope
+				parts := strings.Split(call.CallerName, ".")
+				if len(parts) > 0 {
+					callerID, ok = symbolNameToID[parts[len(parts)-1]]
+				}
+			}
+
+			if !ok {
+				// Caller not found in current file, skip
+				continue
+			}
+
+			// Try to resolve callee symbol ID (might be in another file)
+			calleeID, calleeFound := symbolNameToID[call.CalleeName]
+
+			// Create call graph entry
+			cg := &db.CallGraph{
+				CallerSymbolID: callerID,
+				CalleeName:     call.CalleeName,
+				CallLine:       call.Line,
+				CallColumn:     call.Column,
+				CallType:       call.CallType,
+			}
+
+			if calleeFound {
+				cg.CalleeSymbolID.Valid = true
+				cg.CalleeSymbolID.Int64 = calleeID
+			}
+
+			callGraphs = append(callGraphs, cg)
+		}
+
+		if len(callGraphs) > 0 {
+			if err := idx.db.BatchCreateCallGraph(callGraphs); err != nil {
+				return fmt.Errorf("failed to create call graph: %w", err)
+			}
 		}
 	}
 
