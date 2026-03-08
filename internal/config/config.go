@@ -10,10 +10,9 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Qdrant     QdrantConfig     `mapstructure:"qdrant"`
-	Embedding  EmbeddingConfig  `mapstructure:"embedding"`
-	Indexing   IndexingConfig   `mapstructure:"indexing"`
+	Database    DatabaseConfig    `mapstructure:"database"`
+	Embedding   EmbeddingConfig   `mapstructure:"embedding"`
+	Indexing    IndexingConfig    `mapstructure:"indexing"`
 	Performance PerformanceConfig `mapstructure:"performance"`
 }
 
@@ -22,14 +21,6 @@ type DatabaseConfig struct {
 	Path        string `mapstructure:"path"`
 	WALMode     bool   `mapstructure:"wal_mode"`
 	CacheSizeMB int    `mapstructure:"cache_size_mb"`
-}
-
-// QdrantConfig contains Qdrant vector database settings
-type QdrantConfig struct {
-	Endpoint       string `mapstructure:"endpoint"`
-	CollectionName string `mapstructure:"collection_name"`
-	Mode           string `mapstructure:"mode"` // embedded or external
-	StoragePath    string `mapstructure:"storage_path"`
 }
 
 // EmbeddingConfig contains embedding model settings
@@ -43,8 +34,8 @@ type EmbeddingConfig struct {
 
 // IndexingConfig contains indexing settings
 type IndexingConfig struct {
-	MaxFileSizeMB    int      `mapstructure:"max_file_size_mb"`
-	ExcludePatterns  []string `mapstructure:"exclude_patterns"`
+	MaxFileSizeMB   int      `mapstructure:"max_file_size_mb"`
+	ExcludePatterns []string `mapstructure:"exclude_patterns"`
 }
 
 // PerformanceConfig contains performance tuning settings
@@ -121,12 +112,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.wal_mode", true)
 	v.SetDefault("database.cache_size_mb", 256)
 
-	// Qdrant defaults
-	v.SetDefault("qdrant.endpoint", "http://localhost:6333")
-	v.SetDefault("qdrant.collection_name", "cogi")
-	v.SetDefault("qdrant.mode", "embedded")
-	v.SetDefault("qdrant.storage_path", filepath.Join(cogiDir, "qdrant"))
-
 	// Embedding defaults
 	v.SetDefault("embedding.provider", "ollama")
 	v.SetDefault("embedding.model", "nomic-embed-text")
@@ -160,11 +145,6 @@ func expandPaths(cfg *Config) error {
 	var err error
 
 	cfg.Database.Path, err = expandPath(cfg.Database.Path)
-	if err != nil {
-		return err
-	}
-
-	cfg.Qdrant.StoragePath, err = expandPath(cfg.Qdrant.StoragePath)
 	if err != nil {
 		return err
 	}

@@ -457,7 +457,6 @@ cogi config [--set <key>=<value>]
 - [ ] セマンティック検索実装（Qdrantクライアント）
 
 ### Phase 4: 高度な機能
-- [ ] Ownership Index (git blame)
 - [ ] インクリメンタル更新
 - [ ] 複数粒度ベクトルインデックス
 - [ ] パフォーマンス最適化
@@ -506,13 +505,6 @@ database:
   wal_mode: true
   cache_size_mb: 256
 
-qdrant:
-  endpoint: http://localhost:6333
-  collection_name: cogi
-  # 起動モード: embedded (組み込み起動) or external (外部起動済み)
-  mode: embedded
-  storage_path: ~/.cogi/qdrant
-
 embedding:
   provider: ollama
   model: nomic-embed-text
@@ -550,5 +542,4 @@ performance:
 
 - Tree-sitter: https://tree-sitter.github.io/tree-sitter/
 - SQLite FTS5: https://www.sqlite.org/fts5.html
-- Qdrant: https://qdrant.tech/
 - Ollama: https://ollama.ai/

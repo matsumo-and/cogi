@@ -36,8 +36,8 @@ var rootCmd = &cobra.Command{
 	Short: "Code Intelligence Engine",
 	Long: `Cogi - Code Intelligence Engine
 
-A local code intelligence engine that combines Tree-sitter, SQLite FTS5,
-and Qdrant to enable advanced code search and RAG capabilities.`,
+A local code intelligence engine that combines Tree-sitter, SQLite FTS5
+to enable advanced code search and RAG capabilities.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Show corgi art when no subcommand is provided
 		orange := color.New(color.FgHiYellow).Add(color.Bold)
