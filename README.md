@@ -3,8 +3,10 @@
 > **Cogi**
 > コードベースを探索・理解する Code Intelligence Engine
 
+[![CI](https://github.com/yourusername/cogi/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/cogi/actions/workflows/ci.yml)
 [![Status](https://img.shields.io/badge/status-development-yellow)](https://github.com/yourusername/cogi)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Go Version](https://img.shields.io/badge/go-1.21+-blue)](https://go.dev/)
 
 ## 概要
 
@@ -74,6 +76,18 @@ make install
 
 # キーワード検索（全文検索）
 ./cogi search keyword "parse"
+
+# Call Graph表示（呼び出し元を探す）
+./cogi graph calls FunctionName --direction caller --depth 3
+
+# Call Graph表示（呼び出し先を探す）
+./cogi graph calls FunctionName --direction callee --depth 3
+
+# Import Graph表示（依存関係を見る）
+./cogi graph imports path/to/file.go --direction dependency --depth 2
+
+# Import Graph表示（どこから使われているか）
+./cogi graph imports path/to/file.go --direction importer --depth 2
 ```
 
 ### 現在利用可能な機能
@@ -83,8 +97,9 @@ make install
 - ✅ ステータス表示 (`cogi status`)
 - ✅ シンボル検索 (`cogi search symbol`)
 - ✅ キーワード検索 (`cogi search keyword`)
+- ✅ Call Graph表示 (`cogi graph calls`)
+- ✅ Import Graph表示 (`cogi graph imports`)
 - ⏳ セマンティック検索（Phase 3で実装予定）
-- ⏳ Call/Import Graph（Phase 2で実装予定）
 - ⏳ Ownership Index（Phase 4で実装予定）
 
 ### 前提条件
@@ -139,10 +154,10 @@ make install
   - [x] Tree-sitter統合（Go, TypeScript, Python）
   - [x] Symbol Index構築
   - [x] 基本的な検索機能（シンボル検索、キーワード検索）
-- [ ] **Phase 2: グラフ構築**
-  - [ ] Call Graph生成
-  - [ ] Import Graph生成
-  - [ ] グラフ検索・可視化機能
+- [x] **Phase 2: グラフ構築** ✅ 完了
+  - [x] Call Graph生成
+  - [x] Import Graph生成
+  - [x] グラフ検索・可視化機能
 - [ ] **Phase 3: セマンティック検索**
   - [ ] Qdrant統合（起動・接続管理）
   - [ ] Ollama連携（埋め込み生成）
