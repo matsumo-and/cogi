@@ -240,6 +240,22 @@ func (db *DB) GetAllEmbeddings(granularity string) ([]Embedding, error) {
 	return embeddings, nil
 }
 
+// EmbeddingExists checks if an embedding already exists for a symbol with given granularity and content hash
+func (db *DB) EmbeddingExists(symbolID int64, granularity string, contentHash string) (bool, error) {
+	var count int64
+	err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM embeddings
+		WHERE symbol_id = ? AND granularity = ? AND content_hash = ?
+	`, symbolID, granularity, contentHash).Scan(&count)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check embedding existence: %w", err)
+	}
+
+	return count > 0, nil
+}
+
 // Helper function to generate SQL placeholders
 func placeholders(n int) string {
 	if n == 0 {

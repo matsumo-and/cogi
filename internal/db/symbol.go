@@ -226,3 +226,22 @@ func (db *DB) GetSymbolCountByRepository(repositoryID int64) (int64, error) {
 	}
 	return count, nil
 }
+
+// GetSymbolsByRepository retrieves all symbols for a repository
+func (db *DB) GetSymbolsByRepository(repositoryID int64) ([]*Symbol, error) {
+	rows, err := db.Query(`
+		SELECT s.id, s.file_id, s.name, s.kind, s.start_line, s.start_column,
+		       s.end_line, s.end_column, s.scope, s.visibility, s.docstring,
+		       s.signature, s.code_body
+		FROM symbols s
+		JOIN files f ON s.file_id = f.id
+		WHERE f.repository_id = ?
+		ORDER BY s.name
+	`, repositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get symbols by repository: %w", err)
+	}
+	defer rows.Close()
+
+	return scanSymbols(rows)
+}

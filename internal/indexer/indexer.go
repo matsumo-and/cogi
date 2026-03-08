@@ -2,6 +2,8 @@ package indexer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,20 +13,30 @@ import (
 
 	"github.com/matsumo_and/cogi/internal/config"
 	"github.com/matsumo_and/cogi/internal/db"
+	"github.com/matsumo_and/cogi/internal/embedding"
 	"github.com/matsumo_and/cogi/internal/parser"
 )
 
 // Indexer handles code indexing operations
 type Indexer struct {
-	db     *db.DB
-	config *config.Config
+	db          *db.DB
+	config      *config.Config
+	embedClient embedding.Client
 }
 
 // New creates a new Indexer
 func New(database *db.DB, cfg *config.Config) *Indexer {
+	// Initialize embedding client
+	embedClient := embedding.NewOllamaClient(
+		cfg.Embedding.Endpoint,
+		cfg.Embedding.Model,
+		cfg.Embedding.Dimension,
+	)
+
 	return &Indexer{
-		db:     database,
-		config: cfg,
+		db:          database,
+		config:      cfg,
+		embedClient: embedClient,
 	}
 }
 
@@ -150,10 +162,6 @@ func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath strin
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("indexing completed with %d errors", len(errors))
-	}
-
 	// Update repository last_indexed_at
 	if err := idx.db.UpdateRepositoryIndexedAt(repoID); err != nil {
 		return fmt.Errorf("failed to update repository: %w", err)
@@ -162,6 +170,18 @@ func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath strin
 	// Optimize FTS5 index
 	if err := idx.db.OptimizeFTS5(); err != nil {
 		fmt.Printf("Warning: failed to optimize FTS5: %v\n", err)
+	}
+
+	// Generate embeddings for indexed symbols
+	fmt.Println("\nGenerating embeddings...")
+	if err := idx.generateEmbeddings(ctx, repoID); err != nil {
+		fmt.Printf("Warning: failed to generate embeddings: %v\n", err)
+		fmt.Println("Note: Make sure Ollama is running and the model is available.")
+	}
+
+	// Return error if there were any indexing errors
+	if len(errors) > 0 {
+		return fmt.Errorf("indexing completed with %d errors", len(errors))
 	}
 
 	return nil
@@ -377,4 +397,165 @@ func (idx *Indexer) GetStats(repoID int64) (*IndexingStats, error) {
 		TotalSymbols: symbolCount,
 		LastIndexed:  repo.LastIndexedAt,
 	}, nil
+}
+
+// generateEmbeddings generates embeddings for all symbols in a repository
+func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error {
+	// Get all symbols for this repository
+	symbols, err := idx.db.GetSymbolsByRepository(repoID)
+	if err != nil {
+		return fmt.Errorf("failed to get symbols: %w", err)
+	}
+
+	if len(symbols) == 0 {
+		fmt.Println("No symbols to generate embeddings for")
+		return nil
+	}
+
+	fmt.Printf("Generating embeddings for %d symbols...\n", len(symbols))
+
+	// Prepare texts for embedding generation
+	type embeddingTask struct {
+		symbolID    int64
+		granularity string
+		text        string
+	}
+
+	var tasks []embeddingTask
+
+	for _, sym := range symbols {
+		// Generate class-level embedding for classes/structs/interfaces
+		if sym.Kind == "class" || sym.Kind == "struct" || sym.Kind == "interface" {
+			classText := buildClassLevelText(sym)
+			contentHash := computeHash(classText)
+
+			// Check if embedding already exists
+			exists, err := idx.db.EmbeddingExists(sym.ID, "class", contentHash)
+			if err != nil {
+				return fmt.Errorf("failed to check embedding existence: %w", err)
+			}
+
+			if !exists {
+				tasks = append(tasks, embeddingTask{
+					symbolID:    sym.ID,
+					granularity: "class",
+					text:        classText,
+				})
+			}
+		}
+
+		// Generate function-level embedding for functions/methods
+		if sym.Kind == "function" || sym.Kind == "method" {
+			functionText := buildFunctionLevelText(sym)
+			contentHash := computeHash(functionText)
+
+			// Check if embedding already exists
+			exists, err := idx.db.EmbeddingExists(sym.ID, "function", contentHash)
+			if err != nil {
+				return fmt.Errorf("failed to check embedding existence: %w", err)
+			}
+
+			if !exists {
+				tasks = append(tasks, embeddingTask{
+					symbolID:    sym.ID,
+					granularity: "function",
+					text:        functionText,
+				})
+			}
+		}
+	}
+
+	if len(tasks) == 0 {
+		fmt.Println("All embeddings are up to date")
+		return nil
+	}
+
+	fmt.Printf("Generating %d new embeddings...\n", len(tasks))
+
+	// Extract texts for batch embedding
+	texts := make([]string, len(tasks))
+	for i, task := range tasks {
+		texts[i] = task.text
+	}
+
+	// Generate embeddings in batches
+	batchSize := idx.config.Embedding.BatchSize
+	if batchSize <= 0 {
+		batchSize = 32
+	}
+
+	embeddings, err := embedding.EmbedBatch(ctx, idx.embedClient, texts, batchSize)
+	if err != nil {
+		return fmt.Errorf("failed to generate embeddings: %w", err)
+	}
+
+	// Store embeddings in database
+	for i, task := range tasks {
+		contentHash := computeHash(task.text)
+		_, err := idx.db.CreateEmbedding(task.symbolID, task.granularity, embeddings[i].Vector, contentHash)
+		if err != nil {
+			return fmt.Errorf("failed to store embedding: %w", err)
+		}
+	}
+
+	fmt.Printf("✓ Generated %d embeddings successfully\n", len(tasks))
+	return nil
+}
+
+// buildClassLevelText creates text representation for class-level embedding
+func buildClassLevelText(sym *db.Symbol) string {
+	var parts []string
+
+	// Add docstring if available
+	if sym.Docstring != "" {
+		parts = append(parts, sym.Docstring)
+	}
+
+	// Add signature
+	if sym.Signature != "" {
+		parts = append(parts, sym.Signature)
+	} else {
+		parts = append(parts, fmt.Sprintf("%s %s", sym.Kind, sym.Name))
+	}
+
+	// Add code body (truncated if too long)
+	if sym.CodeBody != "" {
+		body := sym.CodeBody
+		if len(body) > 2000 {
+			body = body[:2000] + "..."
+		}
+		parts = append(parts, body)
+	}
+
+	return strings.Join(parts, "\n\n")
+}
+
+// buildFunctionLevelText creates text representation for function-level embedding
+func buildFunctionLevelText(sym *db.Symbol) string {
+	var parts []string
+
+	// Add docstring if available
+	if sym.Docstring != "" {
+		parts = append(parts, sym.Docstring)
+	}
+
+	// Add signature
+	if sym.Signature != "" {
+		parts = append(parts, sym.Signature)
+	} else {
+		parts = append(parts, fmt.Sprintf("%s %s", sym.Kind, sym.Name))
+	}
+
+	// Add code body
+	if sym.CodeBody != "" {
+		parts = append(parts, sym.CodeBody)
+	}
+
+	return strings.Join(parts, "\n\n")
+}
+
+// computeHash computes SHA256 hash of a string
+func computeHash(text string) string {
+	hash := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(hash[:])
 }
