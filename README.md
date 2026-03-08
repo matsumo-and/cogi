@@ -1,11 +1,10 @@
 # Cogi 🐶
 
-> **Cogi**
-> コードベースを探索・理解する Code Intelligence Engine
-
 [![CI](https://github.com/matsumo-and/cogi/actions/workflows/ci.yml/badge.svg)](https://github.com/matsumo-and/cogi/actions/workflows/ci.yml)
 [![Status](https://img.shields.io/badge/status-development-yellow)](https://github.com/yourusername/cogi)
 [![Go Version](https://img.shields.io/badge/go-1.21+-blue)](https://go.dev/)
+
+![Cogi Demo](assets/demo.gif)
 
 ## 概要
 
@@ -179,14 +178,6 @@ make install
   - [ ] 定期実行機能
   - [ ] エクスポート機能（JSONなど）
   - [ ] ドキュメント整備
-
-## コントリビューション
-
-コントリビューションを歓迎します！詳細は [CONTRIBUTING.md](./CONTRIBUTING.md) を参照してください。
-
-## ライセンス
-
-MIT License - 詳細は [LICENSE](./LICENSE) を参照してください。
 
 ## 謝辞
 
