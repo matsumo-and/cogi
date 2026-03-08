@@ -4,11 +4,31 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var cfgFile string
+
+const corgiArt = `
+            ░░
+            ░ ░             ░░░
+            ░  ░         ░░░  ░░
+            ░░░░░     ░░░░░   ░░           ███████████       █████████        ███████████    ███████
+           ░░░░░░░░░░░░░░░    ░░          ███░░░░░░░███    ███░░░░░░░███     ███░░░░░░░███   ░░███ 
+         ░░░██░░░░░░░░░░░░░░░░░░         ███       ░░░    ███       ░░███   ███       ░░░     ░███ 
+        ░░░█░░░░░░░░░░░░░░░░░░░░        ░███             ░███        ░███  ░███               ░███
+        ░██░░░  ░░░░░░░░░░░░░░░         ░███             ░███        ░███  ░███               ░███ 
+    ░██████░░░░░░░░░░░░░░░░░░░░░        ░███             ░███        ░███  ░███               ░███ 
+ ░░░░██████████████████░░░░░░░░░░       ░███             ░███        ░███  ░███               ░███
+ ░  ░█████████████████████░░░░░░░       ░███             ░███        ░███  ░███               ░███  
+  ░██████████░░░░░██████████░░░░░       ░███             ░███        ░███  ░███               ░███  
+     ░░░░░░░░░░  ░██████████████░       ░███             ░███        ░███  ░███      █████    ░███ 
+   ░░░░░░░░   ██████████████████░       ░░███       ███  ░░███       ███   ░░███    ░░███     ░███ 
+     ░░░ ████████████████████████░       ░░███████████    ░░░█████████░     ░░███████████    ███████
+      ████████████████████████████░       ░░░░░░░░░░░       ░░░░░░░░░        ░░░░░░░░░░░     ░░░░░
+`
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -18,6 +38,12 @@ var rootCmd = &cobra.Command{
 
 A local code intelligence engine that combines Tree-sitter, SQLite FTS5,
 and Qdrant to enable advanced code search and RAG capabilities.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Show corgi art when no subcommand is provided
+		orange := color.New(color.FgHiYellow).Add(color.Bold)
+		orange.Println(corgiArt)
+		cmd.Help()
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
