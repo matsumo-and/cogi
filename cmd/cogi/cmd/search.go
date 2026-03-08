@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/matsumo_and/cogi/internal/config"
+	"github.com/matsumo_and/cogi/internal/db"
 	"github.com/spf13/cobra"
 )
 
@@ -29,14 +32,60 @@ var searchSymbolCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		query := args[0]
-		fmt.Printf("Searching symbols for: %s\n", query)
+
+		// Load config
+		cfg, err := config.Load("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Open database
+		database, err := db.Open(cfg.Database.Path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+			os.Exit(1)
+		}
+		defer database.Close()
+
+		// Search symbols
+		var symbols []*db.Symbol
 		if symbolKind != "" {
-			fmt.Printf("Kind filter: %s\n", symbolKind)
+			symbols, err = database.SearchSymbolsByKind(symbolKind)
+		} else {
+			symbols, err = database.SearchSymbolsByName(query)
 		}
-		if symbolRepo != "" {
-			fmt.Printf("Repository filter: %s\n", symbolRepo)
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error searching symbols: %v\n", err)
+			os.Exit(1)
 		}
-		// TODO: Implement symbol search
+
+		if len(symbols) == 0 {
+			fmt.Println("No symbols found.")
+			return
+		}
+
+		fmt.Printf("\n━━━ Found %d symbol(s) ━━━\n\n", len(symbols))
+
+		for _, sym := range symbols {
+			file, err := database.GetFile(sym.FileID)
+			if err != nil {
+				continue
+			}
+
+			repo, err := database.GetRepository(file.RepositoryID)
+			if err != nil {
+				continue
+			}
+
+			fmt.Printf("📍 %s (%s)\n", sym.Name, sym.Kind)
+			fmt.Printf("   %s:%s:%d\n", repo.Name, file.Path, sym.StartLine)
+			if sym.Signature != "" {
+				fmt.Printf("   %s\n", sym.Signature)
+			}
+			fmt.Println()
+		}
 	},
 }
 
@@ -52,14 +101,64 @@ var searchKeywordCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		query := args[0]
-		fmt.Printf("Keyword search for: %s\n", query)
-		if keywordLang != "" {
-			fmt.Printf("Language filter: %s\n", keywordLang)
+
+		// Load config
+		cfg, err := config.Load("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+			os.Exit(1)
 		}
-		if keywordRepo != "" {
-			fmt.Printf("Repository filter: %s\n", keywordRepo)
+
+		// Open database
+		database, err := db.Open(cfg.Database.Path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+			os.Exit(1)
 		}
-		// TODO: Implement keyword search with FTS5
+		defer database.Close()
+
+		// Perform full-text search
+		symbols, err := database.FullTextSearch(query, 20)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error performing search: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(symbols) == 0 {
+			fmt.Println("No results found.")
+			return
+		}
+
+		fmt.Printf("\n━━━ Found %d result(s) ━━━\n\n", len(symbols))
+
+		for _, sym := range symbols {
+			file, err := database.GetFile(sym.FileID)
+			if err != nil {
+				continue
+			}
+
+			repo, err := database.GetRepository(file.RepositoryID)
+			if err != nil {
+				continue
+			}
+
+			// Apply language filter if specified
+			if keywordLang != "" && file.Language != keywordLang {
+				continue
+			}
+
+			// Apply repository filter if specified
+			if keywordRepo != "" && repo.Name != keywordRepo {
+				continue
+			}
+
+			fmt.Printf("📍 %s (%s)\n", sym.Name, sym.Kind)
+			fmt.Printf("   %s:%s:%d\n", repo.Name, file.Path, sym.StartLine)
+			if sym.Docstring != "" {
+				fmt.Printf("   %s\n", sym.Docstring)
+			}
+			fmt.Println()
+		}
 	},
 }
 
@@ -75,9 +174,14 @@ var searchSemanticCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		query := args[0]
-		fmt.Printf("Semantic search for: %s\n", query)
-		fmt.Printf("Granularity: %s, Limit: %d\n", semanticGranularity, semanticLimit)
-		// TODO: Implement semantic search with Qdrant
+		fmt.Printf("\n━━━ Semantic Search ━━━\n\n")
+		fmt.Printf("Query: %s\n", query)
+		fmt.Printf("Granularity: %s\n", semanticGranularity)
+		fmt.Printf("Limit: %d\n\n", semanticLimit)
+
+		fmt.Println("⚠️  Semantic search is not yet implemented.")
+		fmt.Println("This requires Qdrant and Ollama integration (Phase 3).")
+		fmt.Println("\nFor now, use 'cogi search keyword' for full-text search.")
 	},
 }
 
