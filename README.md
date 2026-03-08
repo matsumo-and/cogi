@@ -76,6 +76,10 @@ make install
 # キーワード検索（全文検索）
 ./cogi search keyword "parse"
 
+# セマンティック検索（自然言語で検索）
+# 注意: Qdrant と Ollama が必要です
+./cogi search semantic "データベースを開く関数"
+
 # Call Graph表示（呼び出し元を探す）
 ./cogi graph calls FunctionName --direction caller --depth 3
 
@@ -96,16 +100,19 @@ make install
 - ✅ ステータス表示 (`cogi status`)
 - ✅ シンボル検索 (`cogi search symbol`)
 - ✅ キーワード検索 (`cogi search keyword`)
+- ✅ セマンティック検索 (`cogi search semantic`)
 - ✅ Call Graph表示 (`cogi graph calls`)
 - ✅ Import Graph表示 (`cogi graph imports`)
-- ⏳ セマンティック検索（Phase 3で実装予定）
 - ⏳ Ownership Index（Phase 4で実装予定）
 
 ### 前提条件
 
 - Go 1.21以上
 - SQLite 3.35以上（FTS5サポート）
-- [Ollama](https://ollama.ai/)（セマンティック検索用、Phase 3）
+  - **重要**: ビルド時に `-tags fts5` が必須（Makefileを使用すれば自動で指定されます）
+- [Ollama](https://ollama.ai/)（セマンティック検索用、オプション）
+- [Qdrant](https://qdrant.tech/)（セマンティック検索用、オプション）
+  - `docker run -p 6333:6333 qdrant/qdrant` で起動
 
 ## アーキテクチャ
 
@@ -157,11 +164,12 @@ make install
   - [x] Call Graph生成
   - [x] Import Graph生成
   - [x] グラフ検索・可視化機能
-- [ ] **Phase 3: セマンティック検索**
-  - [ ] Qdrant統合（起動・接続管理）
-  - [ ] Ollama連携（埋め込み生成）
-  - [ ] セマンティック検索実装
-  - [ ] 複数粒度ベクトルインデックス
+- [x] **Phase 3: セマンティック検索** ✅ 完了
+  - [x] FTS5全文検索実装
+  - [x] Qdrant統合（起動・接続管理）
+  - [x] Ollama連携（埋め込み生成）
+  - [x] セマンティック検索実装
+  - [x] ハイブリッド検索（キーワード＋セマンティック）
 - [ ] **Phase 4: 高度な機能**
   - [ ] Ownership Index (git blame)
   - [ ] インクリメンタル更新

@@ -41,7 +41,7 @@ and Qdrant to enable advanced code search and RAG capabilities.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Show corgi art when no subcommand is provided
 		orange := color.New(color.FgHiYellow).Add(color.Bold)
-		orange.Println(corgiArt)
+		orange.Print(corgiArt)
 		cmd.Help()
 	},
 }

@@ -1,11 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/matsumo_and/cogi/internal/config"
 	"github.com/matsumo_and/cogi/internal/db"
+	"github.com/matsumo_and/cogi/internal/embedding"
+	"github.com/matsumo_and/cogi/internal/search"
+	"github.com/matsumo_and/cogi/internal/vector"
 	"github.com/spf13/cobra"
 )
 
@@ -166,6 +170,8 @@ var searchKeywordCmd = &cobra.Command{
 var (
 	semanticGranularity string
 	semanticLimit       int
+	semanticLang        string
+	semanticRepo        string
 )
 
 var searchSemanticCmd = &cobra.Command{
@@ -174,14 +180,90 @@ var searchSemanticCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		query := args[0]
-		fmt.Printf("\n━━━ Semantic Search ━━━\n\n")
-		fmt.Printf("Query: %s\n", query)
-		fmt.Printf("Granularity: %s\n", semanticGranularity)
-		fmt.Printf("Limit: %d\n\n", semanticLimit)
 
-		fmt.Println("⚠️  Semantic search is not yet implemented.")
-		fmt.Println("This requires Qdrant and Ollama integration (Phase 3).")
-		fmt.Println("\nFor now, use 'cogi search keyword' for full-text search.")
+		// Load config
+		cfg, err := config.Load("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Open database
+		database, err := db.Open(cfg.Database.Path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
+			os.Exit(1)
+		}
+		defer database.Close()
+
+		// Initialize Ollama embedding client
+		embedClient := embedding.NewOllamaClient(
+			cfg.Embedding.Endpoint,
+			cfg.Embedding.Model,
+			cfg.Embedding.Dimension,
+		)
+
+		// Initialize Qdrant vector client
+		vectorClient, err := vector.NewClient(
+			cfg.Qdrant.Endpoint,
+			cfg.Qdrant.CollectionName,
+			cfg.Embedding.Dimension,
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error connecting to Qdrant: %v\n", err)
+			fmt.Println("\n⚠️  Make sure Qdrant is running:")
+			fmt.Println("   docker run -p 6333:6333 qdrant/qdrant")
+			os.Exit(1)
+		}
+		defer vectorClient.Close()
+
+		// Ensure collection exists
+		ctx := context.Background()
+		if err := vectorClient.EnsureCollection(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Error ensuring Qdrant collection: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Create semantic searcher
+		searcher := search.NewSemanticSearcher(database, vectorClient, embedClient)
+
+		// Perform semantic search
+		results, err := searcher.Search(ctx, search.SemanticSearchOptions{
+			Query:       query,
+			Granularity: semanticGranularity,
+			Language:    semanticLang,
+			Repository:  semanticRepo,
+			Limit:       semanticLimit,
+		})
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error performing semantic search: %v\n", err)
+			fmt.Println("\n⚠️  Make sure Ollama is running:")
+			fmt.Println("   ollama serve")
+			fmt.Printf("   ollama pull %s\n", cfg.Embedding.Model)
+			os.Exit(1)
+		}
+
+		if len(results) == 0 {
+			fmt.Println("\nNo results found.")
+			fmt.Println("\nℹ️  Note: You need to build embeddings first:")
+			fmt.Println("   cogi index --embeddings")
+			return
+		}
+
+		fmt.Printf("\n━━━ Found %d result(s) ━━━\n\n", len(results))
+
+		for i, result := range results {
+			fmt.Printf("%d. %s (%s) - Score: %.4f\n", i+1, result.SymbolName, result.SymbolKind, result.Score)
+			fmt.Printf("   %s:%d\n", result.FilePath, result.StartLine)
+			if result.Signature != "" {
+				fmt.Printf("   %s\n", result.Signature)
+			}
+			if result.Docstring != "" {
+				fmt.Printf("   %s\n", result.Docstring)
+			}
+			fmt.Println()
+		}
 	},
 }
 
@@ -200,6 +282,8 @@ func init() {
 
 	// Semantic search
 	searchCmd.AddCommand(searchSemanticCmd)
-	searchSemanticCmd.Flags().StringVarP(&semanticGranularity, "granularity", "g", "function", "Search granularity (class or function)")
+	searchSemanticCmd.Flags().StringVarP(&semanticGranularity, "granularity", "g", "", "Search granularity (class or function, empty for both)")
 	searchSemanticCmd.Flags().IntVarP(&semanticLimit, "limit", "n", 10, "Maximum number of results")
+	searchSemanticCmd.Flags().StringVarP(&semanticLang, "lang", "l", "", "Filter by language")
+	searchSemanticCmd.Flags().StringVarP(&semanticRepo, "repo", "r", "", "Filter by repository")
 }

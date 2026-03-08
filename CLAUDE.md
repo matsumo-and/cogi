@@ -139,6 +139,29 @@ CREATE TRIGGER symbols_au AFTER UPDATE ON symbols ...
 CREATE TRIGGER symbols_ad AFTER DELETE ON symbols ...
 ```
 
+### ビルド時の注意
+
+**重要: FTS5ビルドタグが必須**
+
+SQLite FTS5を使用するため、ビルド時に必ずタグを指定すること：
+
+```bash
+# ❌ 間違い - FTS5が有効にならない
+go build ./cmd/cogi
+
+# ✅ 正しい - FTS5タグを指定
+go build -tags fts5 ./cmd/cogi
+
+# ✅ 推奨 - Makefileを使用
+make build
+```
+
+**Makefileの使用:**
+- `make build`: FTS5タグ付きでビルド
+- `make test`: FTS5タグ付きでテスト実行
+- `make install`: ビルド＋インストール
+- `make clean`: 生成ファイルの削除
+
 ### Tree-sitter統合
 
 **対応言語の優先順位:**

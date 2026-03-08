@@ -31,7 +31,7 @@ and overall system health.`,
 		}
 		defer database.Close()
 
-		fmt.Println("\n━━━ Cogi Status ━━━\n")
+		fmt.Print("\n━━━ Cogi Status ━━━\n\n")
 
 		// List repositories
 		repos, err := database.ListRepositories()
