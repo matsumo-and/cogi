@@ -96,20 +96,39 @@ CREATE TABLE IF NOT EXISTS ownership (
 CREATE INDEX IF NOT EXISTS idx_ownership_file ON ownership(file_id);
 CREATE INDEX IF NOT EXISTS idx_ownership_author ON ownership(author_name);
 
--- Vector Index（ベクトル埋め込み）
+-- Vector Index（ベクトル埋め込み）- 複数粒度とリッチメタデータ対応
 CREATE TABLE IF NOT EXISTS embeddings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol_id INTEGER NOT NULL,
-    granularity TEXT NOT NULL, -- 'class' or 'function'
+    symbol_id INTEGER,  -- ファイルレベルの場合はNULL
+    file_id INTEGER NOT NULL,  -- すべての粒度で必須
+    granularity TEXT NOT NULL, -- 'file', 'class', 'function'
     vector BLOB NOT NULL, -- ベクトル（float32配列をバイナリ化）
     dimension INTEGER NOT NULL, -- ベクトル次元数
     content_hash TEXT NOT NULL, -- 埋め込み対象コンテンツのハッシュ
+
+    -- メタデータ（検索結果表示とフィルタリング用）
+    repository_id INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    language TEXT NOT NULL,
+    symbol_kind TEXT,  -- ファイルレベルの場合はNULL
+    symbol_name TEXT,  -- ファイルレベルの場合はNULL
+    scope TEXT,
+    snippet TEXT,  -- 検索結果表示用の抜粋（最大500文字程度）
+    start_line INTEGER,
+    end_line INTEGER,
+
     created_at INTEGER NOT NULL,
-    FOREIGN KEY (symbol_id) REFERENCES symbols(id) ON DELETE CASCADE
+
+    FOREIGN KEY (symbol_id) REFERENCES symbols(id) ON DELETE CASCADE,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+    FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_symbol ON embeddings(symbol_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_file ON embeddings(file_id);
 CREATE INDEX IF NOT EXISTS idx_embeddings_granularity ON embeddings(granularity);
+CREATE INDEX IF NOT EXISTS idx_embeddings_repository ON embeddings(repository_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_language ON embeddings(language);
 
 -- 全文検索用仮想テーブル（FTS5）
 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(

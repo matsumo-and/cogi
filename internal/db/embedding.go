@@ -11,12 +11,25 @@ import (
 // Embedding represents an embedding entry in the database
 type Embedding struct {
 	ID          int64
-	SymbolID    int64
-	Granularity string
+	SymbolID    *int64 // NULL for file-level embeddings
+	FileID      int64
+	Granularity string // 'file', 'class', 'function'
 	Vector      []float32
 	Dimension   int
 	ContentHash string
-	CreatedAt   time.Time
+
+	// Metadata for search results and filtering
+	RepositoryID int64
+	FilePath     string
+	Language     string
+	SymbolKind   string // NULL for file-level
+	SymbolName   string // NULL for file-level
+	Scope        string
+	Snippet      string // Text excerpt for display
+	StartLine    int
+	EndLine      int
+
+	CreatedAt time.Time
 }
 
 // vectorToBytes converts a float32 slice to bytes
@@ -38,15 +51,21 @@ func bytesToVector(bytes []byte) []float32 {
 	return vector
 }
 
-// CreateEmbedding inserts a new embedding record
-func (db *DB) CreateEmbedding(symbolID int64, granularity string, vector []float32, contentHash string) (int64, error) {
+// CreateEmbedding inserts a new embedding record with full metadata
+func (db *DB) CreateEmbedding(emb *Embedding) (int64, error) {
 	now := time.Now().Unix()
-	vectorBytes := vectorToBytes(vector)
+	vectorBytes := vectorToBytes(emb.Vector)
 
 	result, err := db.Exec(`
-		INSERT INTO embeddings (symbol_id, granularity, vector, dimension, content_hash, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, symbolID, granularity, vectorBytes, len(vector), contentHash, now)
+		INSERT INTO embeddings (
+			symbol_id, file_id, granularity, vector, dimension, content_hash,
+			repository_id, file_path, language, symbol_kind, symbol_name, scope,
+			snippet, start_line, end_line, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		emb.SymbolID, emb.FileID, emb.Granularity, vectorBytes, len(emb.Vector), emb.ContentHash,
+		emb.RepositoryID, emb.FilePath, emb.Language, emb.SymbolKind, emb.SymbolName, emb.Scope,
+		emb.Snippet, emb.StartLine, emb.EndLine, now)
 
 	if err != nil {
 		return 0, fmt.Errorf("failed to create embedding: %w", err)
@@ -67,7 +86,9 @@ func (db *DB) GetEmbeddingBySymbolID(symbolID int64, granularity string) (*Embed
 	var vectorBytes []byte
 
 	query := `
-		SELECT id, symbol_id, granularity, vector, dimension, content_hash, created_at
+		SELECT id, symbol_id, file_id, granularity, vector, dimension, content_hash,
+		       repository_id, file_path, language, symbol_kind, symbol_name, scope,
+		       snippet, start_line, end_line, created_at
 		FROM embeddings
 		WHERE symbol_id = ?
 	`
@@ -81,13 +102,9 @@ func (db *DB) GetEmbeddingBySymbolID(symbolID int64, granularity string) (*Embed
 	query += " LIMIT 1"
 
 	err := db.QueryRow(query, args...).Scan(
-		&e.ID,
-		&e.SymbolID,
-		&e.Granularity,
-		&vectorBytes,
-		&e.Dimension,
-		&e.ContentHash,
-		&createdAt,
+		&e.ID, &e.SymbolID, &e.FileID, &e.Granularity, &vectorBytes, &e.Dimension, &e.ContentHash,
+		&e.RepositoryID, &e.FilePath, &e.Language, &e.SymbolKind, &e.SymbolName, &e.Scope,
+		&e.Snippet, &e.StartLine, &e.EndLine, &createdAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -109,7 +126,9 @@ func (db *DB) GetEmbeddingsBySymbolIDs(symbolIDs []int64) ([]Embedding, error) {
 	}
 
 	query := `
-		SELECT id, symbol_id, granularity, vector, dimension, content_hash, created_at
+		SELECT id, symbol_id, file_id, granularity, vector, dimension, content_hash,
+		       repository_id, file_path, language, symbol_kind, symbol_name, scope,
+		       snippet, start_line, end_line, created_at
 		FROM embeddings
 		WHERE symbol_id IN (` + placeholders(len(symbolIDs)) + `)
 	`
@@ -132,13 +151,9 @@ func (db *DB) GetEmbeddingsBySymbolIDs(symbolIDs []int64) ([]Embedding, error) {
 		var vectorBytes []byte
 
 		err := rows.Scan(
-			&e.ID,
-			&e.SymbolID,
-			&e.Granularity,
-			&vectorBytes,
-			&e.Dimension,
-			&e.ContentHash,
-			&createdAt,
+			&e.ID, &e.SymbolID, &e.FileID, &e.Granularity, &vectorBytes, &e.Dimension, &e.ContentHash,
+			&e.RepositoryID, &e.FilePath, &e.Language, &e.SymbolKind, &e.SymbolName, &e.Scope,
+			&e.Snippet, &e.StartLine, &e.EndLine, &createdAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan embedding: %w", err)
@@ -193,7 +208,9 @@ func (db *DB) UpdateEmbedding(id int64, vector []float32, contentHash string) er
 // GetAllEmbeddings retrieves all embeddings with optional granularity filter
 func (db *DB) GetAllEmbeddings(granularity string) ([]Embedding, error) {
 	query := `
-		SELECT id, symbol_id, granularity, vector, dimension, content_hash, created_at
+		SELECT id, symbol_id, file_id, granularity, vector, dimension, content_hash,
+		       repository_id, file_path, language, symbol_kind, symbol_name, scope,
+		       snippet, start_line, end_line, created_at
 		FROM embeddings
 	`
 	args := []interface{}{}
@@ -216,13 +233,9 @@ func (db *DB) GetAllEmbeddings(granularity string) ([]Embedding, error) {
 		var vectorBytes []byte
 
 		err := rows.Scan(
-			&e.ID,
-			&e.SymbolID,
-			&e.Granularity,
-			&vectorBytes,
-			&e.Dimension,
-			&e.ContentHash,
-			&createdAt,
+			&e.ID, &e.SymbolID, &e.FileID, &e.Granularity, &vectorBytes, &e.Dimension, &e.ContentHash,
+			&e.RepositoryID, &e.FilePath, &e.Language, &e.SymbolKind, &e.SymbolName, &e.Scope,
+			&e.Snippet, &e.StartLine, &e.EndLine, &createdAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan embedding: %w", err)
@@ -251,6 +264,22 @@ func (db *DB) EmbeddingExists(symbolID int64, granularity string, contentHash st
 
 	if err != nil {
 		return false, fmt.Errorf("failed to check embedding existence: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+// FileEmbeddingExists checks if a file-level embedding already exists
+func (db *DB) FileEmbeddingExists(fileID int64, contentHash string) (bool, error) {
+	var count int64
+	err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM embeddings
+		WHERE file_id = ? AND granularity = 'file' AND content_hash = ?
+	`, fileID, contentHash).Scan(&count)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check file embedding existence: %w", err)
 	}
 
 	return count > 0, nil

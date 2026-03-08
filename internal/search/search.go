@@ -227,15 +227,20 @@ func (s *SemanticSearcher) Search(ctx context.Context, opts SemanticSearchOption
 	scoredResults := make([]scoredResult, 0, len(embeddings))
 
 	for _, emb := range embeddings {
+		// Skip file-level embeddings (no symbol ID)
+		if emb.SymbolID == nil {
+			continue
+		}
+
 		// Skip if symbol was filtered out
-		if _, ok := symbolMap[emb.SymbolID]; !ok {
+		if _, ok := symbolMap[*emb.SymbolID]; !ok {
 			continue
 		}
 
 		// Calculate cosine similarity
 		score := cosineSimilarity(embed.Vector, emb.Vector)
 		scoredResults = append(scoredResults, scoredResult{
-			symbolID: emb.SymbolID,
+			symbolID: *emb.SymbolID,
 			score:    score,
 		})
 	}

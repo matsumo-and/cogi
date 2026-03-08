@@ -93,7 +93,7 @@ func main() {
 	}
 
 	// Index the repository
-	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir)
+	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir, true)
 	if err != nil {
 		t.Fatalf("Failed to index repository: %v", err)
 	}
@@ -174,7 +174,7 @@ export class App {
 	}
 
 	// Index the repository
-	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir)
+	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir, true)
 	if err != nil {
 		t.Fatalf("Failed to index repository: %v", err)
 	}
@@ -229,7 +229,7 @@ def main():
 	}
 
 	// Index the repository
-	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir)
+	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir, true)
 	if err != nil {
 		t.Fatalf("Failed to index repository: %v", err)
 	}
@@ -282,7 +282,7 @@ func Hello() {
 
 	// Create repository and index
 	repo, _ := database.CreateRepository("test-repo", tmpDir)
-	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir)
+	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir, true)
 	if err != nil {
 		t.Fatalf("Failed to initial index: %v", err)
 	}
@@ -307,7 +307,7 @@ func Goodbye() {
 	}
 
 	// Re-index
-	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir)
+	err = idx.IndexRepository(context.Background(), repo.ID, tmpDir, true)
 	if err != nil {
 		t.Logf("Warning during re-indexing: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestExcludePatterns(t *testing.T) {
 
 	// Index
 	repo, _ := database.CreateRepository("test-repo", tmpDir)
-	err := idx.IndexRepository(context.Background(), repo.ID, tmpDir)
+	err := idx.IndexRepository(context.Background(), repo.ID, tmpDir, true)
 	if err != nil {
 		t.Logf("Warning during indexing: %v", err)
 	}

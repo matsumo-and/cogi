@@ -69,9 +69,15 @@ including symbol index, call graph, import graph, and vector embeddings.`,
 		// Index each repository
 		for _, repo := range repos {
 			fmt.Printf("\n━━━ Indexing: %s ━━━\n", repo.Name)
-			fmt.Printf("Path: %s\n\n", repo.Path)
+			fmt.Printf("Path: %s\n", repo.Path)
+			if indexFull {
+				fmt.Println("Mode: Full reindex")
+			} else {
+				fmt.Println("Mode: Incremental update")
+			}
+			fmt.Println()
 
-			err := idx.IndexRepository(ctx, repo.ID, repo.Path)
+			err := idx.IndexRepository(ctx, repo.ID, repo.Path, indexFull)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error indexing repository: %v\n", err)
 				continue

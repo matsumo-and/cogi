@@ -14,14 +14,16 @@ import (
 	"github.com/matsumo_and/cogi/internal/config"
 	"github.com/matsumo_and/cogi/internal/db"
 	"github.com/matsumo_and/cogi/internal/embedding"
+	"github.com/matsumo_and/cogi/internal/ownership"
 	"github.com/matsumo_and/cogi/internal/parser"
 )
 
 // Indexer handles code indexing operations
 type Indexer struct {
-	db          *db.DB
-	config      *config.Config
-	embedClient embedding.Client
+	db              *db.DB
+	config          *config.Config
+	embedClient     embedding.Client
+	ownershipAnalyzer *ownership.Analyzer
 }
 
 // New creates a new Indexer
@@ -33,15 +35,19 @@ func New(database *db.DB, cfg *config.Config) *Indexer {
 		cfg.Embedding.Dimension,
 	)
 
+	// Initialize ownership analyzer
+	ownershipAnalyzer := ownership.New(database)
+
 	return &Indexer{
-		db:          database,
-		config:      cfg,
-		embedClient: embedClient,
+		db:                database,
+		config:            cfg,
+		embedClient:       embedClient,
+		ownershipAnalyzer: ownershipAnalyzer,
 	}
 }
 
-// IndexRepository indexes a repository
-func (idx *Indexer) IndexRepository(ctx context.Context, repoID int64, repoPath string) error {
+// IndexRepository performs a full index of a repository
+func (idx *Indexer) IndexRepository(ctx context.Context, repoID int64, repoPath string, fullIndex bool) error {
 	fmt.Printf("Indexing repository: %s\n", repoPath)
 
 	// Walk the repository and collect files to index
@@ -52,8 +58,15 @@ func (idx *Indexer) IndexRepository(ctx context.Context, repoID int64, repoPath 
 
 	fmt.Printf("Found %d files to index\n", len(files))
 
+	// Clean up deleted files if not doing full index
+	if !fullIndex {
+		if err := idx.cleanupDeletedFiles(ctx, repoID, repoPath, files); err != nil {
+			fmt.Printf("Warning: failed to cleanup deleted files: %v\n", err)
+		}
+	}
+
 	// Index files in parallel
-	return idx.indexFiles(ctx, repoID, repoPath, files)
+	return idx.indexFiles(ctx, repoID, repoPath, files, fullIndex)
 }
 
 // collectFiles collects all indexable files in the repository
@@ -113,8 +126,46 @@ func (idx *Indexer) shouldExclude(path string) bool {
 	return false
 }
 
+// cleanupDeletedFiles removes database entries for files that no longer exist
+func (idx *Indexer) cleanupDeletedFiles(ctx context.Context, repoID int64, repoPath string, existingFiles []string) error {
+	// Create a map of existing files for quick lookup
+	existingFilesMap := make(map[string]bool)
+	for _, file := range existingFiles {
+		relPath, err := filepath.Rel(repoPath, file)
+		if err != nil {
+			continue
+		}
+		existingFilesMap[relPath] = true
+	}
+
+	// Get all files from database
+	dbFiles, err := idx.db.ListFilesByRepository(repoID)
+	if err != nil {
+		return fmt.Errorf("failed to list files from database: %w", err)
+	}
+
+	// Find and delete files that no longer exist
+	var deletedCount int
+	for _, dbFile := range dbFiles {
+		if !existingFilesMap[dbFile.Path] {
+			// File no longer exists, delete it
+			if err := idx.db.DeleteFile(dbFile.ID); err != nil {
+				fmt.Printf("Warning: failed to delete file %s: %v\n", dbFile.Path, err)
+				continue
+			}
+			deletedCount++
+		}
+	}
+
+	if deletedCount > 0 {
+		fmt.Printf("Cleaned up %d deleted files\n", deletedCount)
+	}
+
+	return nil
+}
+
 // indexFiles indexes multiple files in parallel
-func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath string, files []string) error {
+func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath string, files []string, fullIndex bool) error {
 	maxWorkers := idx.config.Performance.MaxWorkers
 	if maxWorkers <= 0 {
 		maxWorkers = 4
@@ -137,7 +188,7 @@ func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath strin
 					results <- ctx.Err()
 					return
 				default:
-					err := idx.indexFile(ctx, repoID, repoPath, filePath)
+					err := idx.indexFile(ctx, repoID, repoPath, filePath, fullIndex)
 					results <- err
 				}
 			}
@@ -179,6 +230,13 @@ func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath strin
 		fmt.Println("Note: Make sure Ollama is running and the model is available.")
 	}
 
+	// Analyze ownership for indexed files
+	fmt.Println("\nAnalyzing code ownership...")
+	if err := idx.analyzeOwnership(ctx, repoID, repoPath); err != nil {
+		fmt.Printf("Warning: failed to analyze ownership: %v\n", err)
+		fmt.Println("Note: Make sure you're in a git repository.")
+	}
+
 	// Return error if there were any indexing errors
 	if len(errors) > 0 {
 		return fmt.Errorf("indexing completed with %d errors", len(errors))
@@ -188,7 +246,7 @@ func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath strin
 }
 
 // indexFile indexes a single file
-func (idx *Indexer) indexFile(ctx context.Context, repoID int64, repoPath, filePath string) error {
+func (idx *Indexer) indexFile(ctx context.Context, repoID int64, repoPath, filePath string, fullIndex bool) error {
 	// Get relative path
 	relPath, err := filepath.Rel(repoPath, filePath)
 	if err != nil {
@@ -222,10 +280,19 @@ func (idx *Indexer) indexFile(ctx context.Context, repoID int64, repoPath, fileP
 	var fileID int64
 
 	if existingFile != nil {
-		// Check if file has changed
+		// Check if file has changed (hash-based check)
 		if existingFile.FileHash == fileHash {
 			// File hasn't changed, skip
 			return nil
+		}
+
+		// If not full index, also check timestamp
+		if !fullIndex {
+			// Check if file was modified after last indexing
+			if !fileInfo.ModTime().After(existingFile.IndexedAt) {
+				// File hasn't been modified, skip
+				return nil
+			}
 		}
 
 		// File has changed, delete old data
@@ -414,14 +481,42 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 
 	fmt.Printf("Generating embeddings for %d symbols...\n", len(symbols))
 
+	// Group symbols by file for file-level embeddings
+	fileSymbols := make(map[int64][]*db.Symbol)
+	for _, sym := range symbols {
+		fileSymbols[sym.FileID] = append(fileSymbols[sym.FileID], sym)
+	}
+
 	// Prepare texts for embedding generation
 	type embeddingTask struct {
-		symbolID    int64
+		symbol      *db.Symbol // nil for file-level embeddings
+		fileID      int64
 		granularity string
 		text        string
 	}
 
 	var tasks []embeddingTask
+
+	// Generate file-level embeddings
+	for fileID, syms := range fileSymbols {
+		fileText := buildFileLevelText(syms)
+		contentHash := computeHash(fileText)
+
+		// Check if embedding already exists for this file
+		exists, err := idx.db.FileEmbeddingExists(fileID, contentHash)
+		if err != nil {
+			return fmt.Errorf("failed to check file embedding existence: %w", err)
+		}
+
+		if !exists {
+			tasks = append(tasks, embeddingTask{
+				symbol:      nil, // file-level has no specific symbol
+				fileID:      fileID,
+				granularity: "file",
+				text:        fileText,
+			})
+		}
+	}
 
 	for _, sym := range symbols {
 		// Generate class-level embedding for classes/structs/interfaces
@@ -437,7 +532,7 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 
 			if !exists {
 				tasks = append(tasks, embeddingTask{
-					symbolID:    sym.ID,
+					symbol:      sym,
 					granularity: "class",
 					text:        classText,
 				})
@@ -457,7 +552,7 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 
 			if !exists {
 				tasks = append(tasks, embeddingTask{
-					symbolID:    sym.ID,
+					symbol:      sym,
 					granularity: "function",
 					text:        functionText,
 				})
@@ -472,30 +567,164 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 
 	fmt.Printf("Generating %d new embeddings...\n", len(tasks))
 
-	// Extract texts for batch embedding
-	texts := make([]string, len(tasks))
-	for i, task := range tasks {
-		texts[i] = task.text
-	}
-
-	// Generate embeddings in batches
+	// Determine batch size and number of workers
 	batchSize := idx.config.Embedding.BatchSize
 	if batchSize <= 0 {
 		batchSize = 32
 	}
 
-	embeddings, err := embedding.EmbedBatch(ctx, idx.embedClient, texts, batchSize)
-	if err != nil {
-		return fmt.Errorf("failed to generate embeddings: %w", err)
+	// Process embeddings in parallel batches
+	numWorkers := idx.config.Performance.MaxWorkers
+	if numWorkers <= 0 {
+		numWorkers = 4
 	}
 
-	// Store embeddings in database
-	for i, task := range tasks {
-		contentHash := computeHash(task.text)
-		_, err := idx.db.CreateEmbedding(task.symbolID, task.granularity, embeddings[i].Vector, contentHash)
-		if err != nil {
-			return fmt.Errorf("failed to store embedding: %w", err)
+	// Split tasks into batches
+	var batches [][]embeddingTask
+	for i := 0; i < len(tasks); i += batchSize {
+		end := i + batchSize
+		if end > len(tasks) {
+			end = len(tasks)
 		}
+		batches = append(batches, tasks[i:end])
+	}
+
+	fmt.Printf("Processing %d batches with %d workers...\n", len(batches), numWorkers)
+
+	// Create worker pool for batch processing
+	batchJobs := make(chan []embeddingTask, len(batches))
+	batchResults := make(chan error, len(batches))
+
+	var wg sync.WaitGroup
+
+	// Start workers
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for batch := range batchJobs {
+				select {
+				case <-ctx.Done():
+					batchResults <- ctx.Err()
+					return
+				default:
+					// Extract texts for this batch
+					texts := make([]string, len(batch))
+					for i, task := range batch {
+						texts[i] = task.text
+					}
+
+					// Generate embeddings for this batch
+					embeds, err := embedding.EmbedBatch(ctx, idx.embedClient, texts, len(texts))
+					if err != nil {
+						batchResults <- fmt.Errorf("worker %d: failed to generate embeddings: %w", workerID, err)
+						continue
+					}
+
+					// Store embeddings in database
+					for i, task := range batch {
+						contentHash := computeHash(task.text)
+
+						var emb *db.Embedding
+
+						if task.granularity == "file" {
+							// File-level embedding
+							file, err := idx.db.GetFile(task.fileID)
+							if err != nil {
+								batchResults <- fmt.Errorf("worker %d: failed to get file: %w", workerID, err)
+								break
+							}
+
+							// Create snippet from the beginning of the text
+							snippet := task.text
+							if len(snippet) > 500 {
+								snippet = snippet[:500] + "..."
+							}
+
+							emb = &db.Embedding{
+								SymbolID:     nil, // File-level has no specific symbol
+								FileID:       task.fileID,
+								Granularity:  "file",
+								Vector:       embeds[i].Vector,
+								ContentHash:  contentHash,
+								RepositoryID: file.RepositoryID,
+								FilePath:     file.Path,
+								Language:     file.Language,
+								SymbolKind:   "",
+								SymbolName:   "",
+								Scope:        "",
+								Snippet:      snippet,
+								StartLine:    0,
+								EndLine:      0,
+							}
+						} else {
+							// Symbol-level embedding (class or function)
+							file, err := idx.db.GetFile(task.symbol.FileID)
+							if err != nil {
+								batchResults <- fmt.Errorf("worker %d: failed to get file: %w", workerID, err)
+								break
+							}
+
+							// Create snippet from docstring or signature
+							snippet := task.symbol.Docstring
+							if snippet == "" {
+								snippet = task.symbol.Signature
+							}
+							if len(snippet) > 500 {
+								snippet = snippet[:500] + "..."
+							}
+
+							emb = &db.Embedding{
+								SymbolID:     &task.symbol.ID,
+								FileID:       task.symbol.FileID,
+								Granularity:  task.granularity,
+								Vector:       embeds[i].Vector,
+								ContentHash:  contentHash,
+								RepositoryID: file.RepositoryID,
+								FilePath:     file.Path,
+								Language:     file.Language,
+								SymbolKind:   task.symbol.Kind,
+								SymbolName:   task.symbol.Name,
+								Scope:        task.symbol.Scope,
+								Snippet:      snippet,
+								StartLine:    task.symbol.StartLine,
+								EndLine:      task.symbol.EndLine,
+							}
+						}
+
+						_, err = idx.db.CreateEmbedding(emb)
+						if err != nil {
+							batchResults <- fmt.Errorf("worker %d: failed to store embedding: %w", workerID, err)
+							break
+						}
+					}
+
+					batchResults <- nil
+				}
+			}
+		}(w)
+	}
+
+	// Send batch jobs
+	for _, batch := range batches {
+		batchJobs <- batch
+	}
+	close(batchJobs)
+
+	// Wait for all workers to finish
+	wg.Wait()
+	close(batchResults)
+
+	// Collect errors
+	var errors []error
+	for err := range batchResults {
+		if err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("embedding generation completed with %d errors: %v", len(errors), errors[0])
 	}
 
 	fmt.Printf("✓ Generated %d embeddings successfully\n", len(tasks))
@@ -552,6 +781,78 @@ func buildFunctionLevelText(sym *db.Symbol) string {
 	}
 
 	return strings.Join(parts, "\n\n")
+}
+
+// buildFileLevelText creates text representation for file-level embedding
+func buildFileLevelText(symbols []*db.Symbol) string {
+	var parts []string
+
+	// Add file summary from top-level docstrings
+	for _, sym := range symbols {
+		// Include top-level classes and important functions
+		if sym.Kind == "class" || sym.Kind == "struct" || sym.Kind == "interface" {
+			if sym.Docstring != "" {
+				parts = append(parts, fmt.Sprintf("%s %s: %s", sym.Kind, sym.Name, sym.Docstring))
+			} else if sym.Signature != "" {
+				parts = append(parts, sym.Signature)
+			}
+		} else if sym.Kind == "function" && sym.Scope == "" {
+			// Top-level functions only
+			if sym.Docstring != "" {
+				parts = append(parts, fmt.Sprintf("function %s: %s", sym.Name, sym.Docstring))
+			} else if sym.Signature != "" {
+				parts = append(parts, sym.Signature)
+			}
+		}
+	}
+
+	// If we have too many items, truncate
+	text := strings.Join(parts, "\n")
+	if len(text) > 3000 {
+		text = text[:3000] + "\n... (truncated)"
+	}
+
+	return text
+}
+
+// analyzeOwnership analyzes code ownership for all files in a repository
+func (idx *Indexer) analyzeOwnership(ctx context.Context, repoID int64, repoPath string) error {
+	// Get all files for this repository
+	files, err := idx.db.ListFilesByRepository(repoID)
+	if err != nil {
+		return fmt.Errorf("failed to list files: %w", err)
+	}
+
+	if len(files) == 0 {
+		fmt.Println("No files to analyze")
+		return nil
+	}
+
+	fmt.Printf("Analyzing ownership for %d files...\n", len(files))
+
+	var successCount int
+	var errorCount int
+
+	for _, file := range files {
+		// Build absolute file path
+		absPath := filepath.Join(repoPath, file.Path)
+
+		// Analyze ownership for this file
+		if err := idx.ownershipAnalyzer.AnalyzeFile(ctx, repoPath, absPath, file.ID); err != nil {
+			// Don't fail the entire operation for a single file
+			errorCount++
+			continue
+		}
+		successCount++
+	}
+
+	if errorCount > 0 {
+		fmt.Printf("✓ Analyzed %d files, %d errors\n", successCount, errorCount)
+	} else {
+		fmt.Printf("✓ Analyzed %d files successfully\n", successCount)
+	}
+
+	return nil
 }
 
 // computeHash computes SHA256 hash of a string
