@@ -1,130 +1,95 @@
-# Cogi 🐶
+# Cogi 🐕
 
 [![CI](https://github.com/matsumo-and/cogi/actions/workflows/ci.yml/badge.svg)](https://github.com/matsumo-and/cogi/actions/workflows/ci.yml)
-[![Status](https://img.shields.io/badge/status-development-yellow)](https://github.com/yourusername/cogi)
+[![Status](https://img.shields.io/badge/status-production-green)](https://github.com/matsumo-and/cogi)
 [![Go Version](https://img.shields.io/badge/go-1.21+-blue)](https://go.dev/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ![Cogi Demo](assets/demo.gif)
 
-## 概要
+**Cogi** (Corgi + Cognitive) is a local-first code intelligence engine that combines Tree-sitter parsing, SQLite FTS5 full-text search, and vector embeddings to enable advanced code search and RAG (Retrieval-Augmented Generation) capabilities across multiple repositories.
 
-**Cogi**はマルチリポジトリ対応のローカル実行可能なCode Intelligence Engineです。
-Tree-sitter、SQLite（FTS5 + ベクトル埋め込み）を組み合わせて、高度なコード検索とRAG（Retrieval-Augmented Generation）を実現します。
+## Features
 
-### 特徴
+- **Fully Local**: All processing runs locally without external dependencies
+- **Fast Indexing**: Index multiple repositories in under 5 minutes
+- **Multi-Language**: Full support for 10+ programming languages
+- **Advanced Search**: Symbol, keyword, and semantic search capabilities
+- **Code Analysis**: Call graphs, import graphs, and ownership tracking
+- **Incremental Updates**: Efficiently re-index only changed files
+- **Data Export**: Export indexed data in JSON format
 
-- 🏠 **完全ローカル実行**: すべての処理がローカル環境で完結
-- 🚀 **高速インデックス**: 最長5分でマルチリポジトリをインデックス化
-- 🎯 **多様な検索**: キーワード、セマンティック、シンボル検索に対応
-- 🔄 **インクリメンタル更新**: 変更ファイルのみを効率的に再インデックス
-- 🌍 **多言語対応**: 10以上のプログラミング言語をサポート
+## Supported Languages
 
-## 主な機能
+### Full Support (Tree-sitter based)
+Go, JavaScript, TypeScript, Python, Rust, Java, C#, HTML, CSS, JSON
 
-### 検索機能
+### Text Fallback
+Markdown, XML, YAML, TOML, INI, and other text files
 
-- 🔍 **シンボル検索**: 関数・クラス・変数などの定義を高速検索
-- 📝 **全文検索**: SQLite FTS5によるキーワード検索（BM25ランキング）
-- 🧠 **セマンティック検索**: SQLite + Ollamaによる自然言語検索（コサイン類似度）
+Unknown file extensions are automatically processed with the text parser.
 
-### グラフ機能
+## Quick Start
 
-- 🕸️ **Call Graph**: 関数呼び出し関係の可視化・分析
-- 📦 **Import Graph**: モジュール依存関係の追跡・循環依存検出
-
-### 分析機能
-
-- 👤 **Ownership Index**: git blameベースのコード所有者情報
-- 📊 **影響範囲分析**: コード変更の影響を可視化
-- 📤 **データエクスポート**: インデックスデータをJSON形式でエクスポート
-
-## 対応言語
-
-- **フルサポート**: Go, JavaScript, TypeScript, Python, Rust, Java, C#, HTML, CSS, JSON
-- **テキストフォールバック**: Markdown, XML, YAML, TOML, INI, その他のテキストファイル
-  - 未対応の拡張子は自動的にテキストパーサーで処理されます
-
-## 使い方
-
-### インストール
+### Installation
 
 ```bash
-# ソースからビルド
-git clone https://github.com/yourusername/cogi.git
+# Clone the repository
+git clone https://github.com/matsumo-and/cogi.git
 cd cogi
 
-# FTS5サポート付きでビルド
+# Build with FTS5 support
 make build
 
-# またはインストール
+# Or install globally
 make install
 ```
 
-### クイックスタート
+### Basic Usage
 
 ```bash
-# リポジトリを追加
-./cogi add ~/my-project
+# Add a repository
+cogi add ~/my-project
 
-# インデックスを構築
-./cogi index
+# Build the index
+cogi index
 
-# ステータス確認
-./cogi status
+# Check status
+cogi status
 
-# シンボル検索
-./cogi search symbol New
+# Search for symbols
+cogi search symbol "DatabaseConnection"
 
-# キーワード検索（全文検索）
-./cogi search keyword "parse"
+# Keyword search (full-text search)
+cogi search keyword "parse json"
 
-# セマンティック検索（自然言語で検索）
-# 注意: Ollama が必要です
-./cogi search semantic "データベースを開く関数"
+# Semantic search (requires Ollama)
+cogi search semantic "function that opens a database"
 
-# Call Graph表示（呼び出し元を探す）
-./cogi graph calls FunctionName --direction caller --depth 3
+# View call graph
+cogi graph calls FunctionName --direction caller --depth 3
 
-# Call Graph表示（呼び出し先を探す）
-./cogi graph calls FunctionName --direction callee --depth 3
+# View import dependencies
+cogi graph imports path/to/file.go --direction dependency --depth 2
 
-# Import Graph表示（依存関係を見る）
-./cogi graph imports path/to/file.go --direction dependency --depth 2
-
-# Import Graph表示（どこから使われているか）
-./cogi graph imports path/to/file.go --direction importer --depth 2
-
-# エクスポート機能（全データをJSON出力）
-./cogi export --output data.json --type all
-
-# シンボルのみエクスポート
-./cogi export --output symbols.json --type symbols
-
-# 特定リポジトリのデータをエクスポート
-./cogi export --output repo_data.json --type symbols --repo my-project
+# Export data
+cogi export --output data.json --type all
 ```
 
-### 現在利用可能な機能
+## Available Commands
 
-- ✅ リポジトリ追加 (`cogi add`)
-- ✅ インデックス構築 (`cogi index`)
-- ✅ ステータス表示 (`cogi status`)
-- ✅ シンボル検索 (`cogi search symbol`)
-- ✅ キーワード検索 (`cogi search keyword`)
-- ✅ セマンティック検索 (`cogi search semantic`)
-- ✅ Call Graph表示 (`cogi graph calls`)
-- ✅ Import Graph表示 (`cogi graph imports`)
-- ✅ Ownership Index (`cogi ownership`)
-- ✅ データエクスポート (`cogi export`)
+- `cogi add` - Add a repository to the index
+- `cogi index` - Build or update the code index
+- `cogi status` - Show status and statistics
+- `cogi search symbol` - Search for symbol definitions
+- `cogi search keyword` - Full-text keyword search
+- `cogi search semantic` - Natural language semantic search
+- `cogi graph calls` - Visualize function call relationships
+- `cogi graph imports` - Visualize module dependencies
+- `cogi ownership` - Show code ownership information
+- `cogi export` - Export indexed data to JSON
 
-### 前提条件
-
-- Go 1.21以上
-- SQLite 3.35以上（FTS5サポート）
-  - **重要**: ビルド時に `-tags fts5` が必須（Makefileを使用すれば自動で指定されます）
-- [Ollama](https://ollama.ai/)（セマンティック検索用、オプション）
-
-## アーキテクチャ
+## Architecture
 
 ```
 ┌─────────────────────────────────────┐
@@ -134,10 +99,10 @@ make install
 ┌──────────▼──────────────┐
 │       SQLite            │
 │  ┌──────────────────┐   │
-│  │ FTS5 (全文検索)  │   │
+│  │ FTS5 (Search)    │   │
 │  ├──────────────────┤   │
 │  │ Vector (BLOB)    │   │
-│  │ + Cosine類似度   │   │
+│  │ + Cosine Sim.    │   │
 │  └──────────────────┘   │
 └─────────────────────────┘
     │             │
@@ -147,53 +112,93 @@ make install
 └─────────────┘ └─────────┘
 ```
 
-### 技術スタック
+### Technology Stack
 
-- **パーサー**: Tree-sitter（各言語のgrammar）
-- **メタデータDB**: SQLite + FTS5 + ベクトル埋め込み
-- **ベクトル検索**: SQLite BLOB + コサイン類似度（完全ローカル）
-- **埋め込みモデル**: Ollama (nomic-embed-text等)
+- **Parser**: Tree-sitter with language grammars
+- **Database**: SQLite + FTS5 + Vector embeddings
+- **Search**: SQLite BLOB + Cosine similarity (fully local)
+- **Embeddings**: Ollama (nomic-embed-text, etc.)
 - **CLI**: Cobra + Viper
 
-## ドキュメント
+## Core Components
 
-- [SPEC.md](./SPEC.md) - 詳細な仕様
-- [CLAUDE.md](./CLAUDE.md) - 開発ガイドライン
+### 1. Symbol Index
+Indexes all code symbols (functions, classes, variables, types) across repositories.
 
-## 開発ステータス
+### 2. Call Graph
+Tracks function/method call relationships for impact analysis.
 
-🚧 **現在開発中**
+### 3. Import Graph
+Maps module dependencies and detects circular imports.
 
-### ロードマップ
+### 4. Vector Index
+Semantic search using code embeddings at multiple granularities:
+- Class/struct level (overview)
+- Function/method level (implementation details)
 
-- [x] **Phase 1: 基盤構築** ✅ 完了
-  - [x] CLI骨格（Cobra + Viper）
-  - [x] SQLiteスキーマ + FTS5
-  - [x] 設定管理パッケージ
-  - [x] Tree-sitter統合（Go, TypeScript, Python）
-  - [x] Symbol Index構築
-  - [x] 基本的な検索機能（シンボル検索、キーワード検索）
-- [x] **Phase 2: グラフ構築** ✅ 完了
-  - [x] Call Graph生成
-  - [x] Import Graph生成
-  - [x] グラフ検索・可視化機能
-- [x] **Phase 3: セマンティック検索** ✅ 完了
-  - [x] FTS5全文検索実装
-  - [x] SQLiteベクトル埋め込み（BLOB形式）
-  - [x] Ollama連携（埋め込み生成）
-  - [x] コサイン類似度ベースの検索実装
-  - [x] ハイブリッド検索（キーワード＋セマンティック）
-- [x] **Phase 4: 高度な機能** ✅ 完了
-  - [x] Ownership Index (git blame)
-  - [x] インクリメンタル更新
-  - [x] パフォーマンス最適化
-- [x] **Phase 5: 拡張** ✅ 完了
-  - [x] 残り言語対応（Rust, C#, Java, HTML, CSS）
-  - [x] エクスポート機能（JSON形式）
-  - [ ] 定期実行機能（今後の拡張）
-  - [ ] ドキュメント整備（今後の拡張）
+### 5. Ownership Index
+Git blame-based code ownership tracking for collaboration insights.
 
-## 謝辞
+## Requirements
+
+- Go 1.21 or higher
+- SQLite 3.35 or higher (FTS5 support)
+  - **Important**: Build with `-tags fts5` (automatically handled by Makefile)
+- [Ollama](https://ollama.ai/) (optional, for semantic search)
+
+## Configuration
+
+Default configuration file: `~/.cogi/config.yaml`
+
+```yaml
+database:
+  path: ~/.cogi/data.db
+  wal_mode: true
+  cache_size_mb: 256
+
+embedding:
+  provider: ollama
+  model: nomic-embed-text
+  endpoint: http://localhost:11434
+  dimension: 768
+  batch_size: 32
+
+indexing:
+  max_file_size_mb: 10
+  exclude_patterns:
+    - "*/node_modules/*"
+    - "*/vendor/*"
+    - "*/.git/*"
+    - "*/dist/*"
+    - "*/build/*"
+
+performance:
+  max_workers: 8
+```
+
+## Performance
+
+| Metric | Target |
+|--------|--------|
+| Repository Count | 1-20 |
+| Full Index Time | < 5 minutes |
+| Incremental Update | Seconds to tens of seconds |
+| Search Response | < 1 second |
+
+## Documentation
+
+- [SPEC.md](./SPEC.md) - Technical specification
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - Contribution guidelines
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+## License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+## Acknowledgments
 
 - [Tree-sitter](https://tree-sitter.github.io/tree-sitter/)
 - [Ollama](https://ollama.ai/)

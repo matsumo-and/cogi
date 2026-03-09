@@ -1,25 +1,22 @@
-# Cogi - Code Intelligence Engine
+# Cogi - Technical Specification
 
-> **Cogi**
-> コードベースを探索・理解する Code Intelligence Engine
+> **Cogi**: A Code Intelligence Engine for exploring and understanding codebases
 
-## 概要
+## Overview
 
-マルチリポジトリ対応のローカル実行可能なCode Intelligence Engine。Tree-sitterを使用してコードをパースし、複数のインデックスを構築することで、高度なコード検索とRAG（Retrieval-Augmented Generation）を実現する。
+Cogi is a local-first, multi-repository code intelligence engine that leverages Tree-sitter for parsing, SQLite for storage and full-text search, and vector embeddings for semantic search to enable advanced code search and RAG (Retrieval-Augmented Generation) capabilities.
 
-## 目的
+## Goals
 
-- マルチリポジトリのコードをパースしてRAGとして活用
-- セマンティック検索とキーワード検索によるコード検索
-- コードベースの仕様理解支援
+- Parse and index multi-repository codebases for RAG applications
+- Enable semantic and keyword-based code search
+- Support codebase specification understanding and analysis
 
 ---
 
-## 対応言語
+## Supported Languages
 
-以下の言語を対象とする：
-
-### フルサポート（Tree-sitterベース）
+### Full Support (Tree-sitter based)
 - Go
 - JavaScript / TypeScript
 - Java
@@ -29,200 +26,170 @@
 - HTML / CSS
 - JSON
 
-### テキストフォールバック
+### Text Fallback
 - Markdown
 - XML
 - YAML / TOML / INI
-- その他のテキストファイル
+- Other text files
 
-未対応の拡張子は自動的にテキストパーサーで処理され、基本的なドキュメント構造を抽出します。
-
----
-
-## アーキテクチャ
-
-### 技術スタック
-
-| コンポーネント | 技術 |
-|--------------|------|
-| 実装言語 | Go |
-| パーサー | Tree-sitter (各言語のgrammar) |
-| メタデータDB | SQLite |
-| 全文検索 | SQLite FTS5 |
-| ベクトル検索 | Qdrant |
-| 埋め込みモデル | Ollama (nomic-embed-text等) |
-| インターフェース | CLI |
-
-### データベース構成（ハイブリッド）
-
-1. **SQLite**: メタデータ、Symbol Index、Call/Import Graph、Ownership Index
-2. **SQLite FTS5**: 全文検索（キーワード検索）- SQLite組み込み
-3. **Qdrant**: ベクトル検索（セマンティック検索）+ メタデータフィルタリング
-
-### SQLite FTS5セットアップ
-
-**特徴**:
-- SQLiteに組み込みの全文検索エンジン
-- 追加の依存関係・プロセス不要
-- トリガーで自動同期（メンテナンスフリー）
-
-**検索機能**:
-- キーワード検索（AND/OR/NOT）
-- フレーズ検索（"exact match"）
-- 前方一致（prefix*）
-- BM25ランキング
-
-**制約**:
-- タイポ耐性なし（完全一致）
-- CamelCase自動分割なし（必要に応じて実装）
-
-### Qdrantセットアップ
-
-**起動方法**:
-- **組み込みモード**: CLIがQdrantプロセスを自動起動・管理
-
-**コレクション構成**:
-```json
-{
-  "collection_name": "cogi",
-  "vectors": {
-    "size": 768,
-    "distance": "Cosine"
-  },
-  "payload_schema": {
-    "symbol_id": "integer",
-    "granularity": "keyword",
-    "repository_id": "integer",
-    "file_path": "text",
-    "language": "keyword",
-    "symbol_kind": "keyword",
-    "symbol_name": "text",
-    "snippet": "text"
-  }
-}
-```
+Unsupported file extensions are automatically processed with the text parser to extract basic document structure.
 
 ---
 
-## コアコンポーネント
+## Architecture
+
+### Technology Stack
+
+| Component | Technology |
+|-----------|------------|
+| Language | Go |
+| Parser | Tree-sitter (language grammars) |
+| Metadata DB | SQLite |
+| Full-text Search | SQLite FTS5 |
+| Vector Search | SQLite BLOB + Cosine Similarity |
+| Embeddings | Ollama (nomic-embed-text, etc.) |
+| Interface | CLI |
+
+### Database Architecture
+
+**Unified SQLite Database**:
+1. **SQLite**: Metadata, Symbol Index, Call/Import Graphs, Ownership Index
+2. **SQLite FTS5**: Full-text search (keyword search) - built-in
+3. **Vector Embeddings**: Stored as BLOB with cosine similarity search
+
+### SQLite FTS5 Setup
+
+**Features**:
+- Built-in SQLite full-text search engine
+- No additional dependencies or processes
+- Auto-sync via triggers (maintenance-free)
+
+**Search Capabilities**:
+- Keyword search (AND/OR/NOT)
+- Phrase search ("exact match")
+- Prefix matching (prefix*)
+- BM25 ranking
+
+**Limitations**:
+- No typo tolerance (exact matching)
+- No automatic CamelCase splitting (can be implemented if needed)
+
+---
+
+## Core Components
 
 ### 1. Symbol Index
 
-コードベース内の全シンボル（関数、クラス、変数、型など）をインデックス化。
+Indexes all symbols (functions, classes, variables, types) in the codebase.
 
-**格納情報**:
-- シンボル名
-- シンボル種別 (function, class, method, variable, type, interface, etc.)
-- ファイルパス
-- 行番号・列番号
-- スコープ情報
-- ドキュメントコメント
-- 可視性 (public/private/protected)
-- リポジトリID
+**Stored Information**:
+- Symbol name
+- Symbol kind (function, class, method, variable, type, interface, etc.)
+- File path
+- Line and column numbers
+- Scope information
+- Documentation comments
+- Visibility (public/private/protected)
+- Repository ID
 
-**用途**:
-- シンボル検索
-- 定義ジャンプ
-- リファレンス検索
+**Use Cases**:
+- Symbol search
+- Definition jump
+- Reference search
 
 ### 2. Call Graph
 
-関数・メソッドの呼び出し関係を有向グラフとして表現。
+Represents function/method call relationships as a directed graph.
 
-**格納情報**:
-- 呼び出し元シンボルID
-- 呼び出し先シンボルID
-- 呼び出し位置（ファイルパス、行番号）
-- 呼び出し種別 (direct call, method call, indirect call)
+**Stored Information**:
+- Caller symbol ID
+- Callee symbol ID
+- Call location (file path, line number)
+- Call type (direct call, method call, indirect call)
 
-**用途**:
-- 影響範囲分析
-- 依存関係の可視化
-- デッドコード検出
+**Use Cases**:
+- Impact analysis
+- Dependency visualization
+- Dead code detection
 
 ### 3. Import Graph
 
-ファイル/モジュール間の依存関係をグラフとして表現。
+Represents file/module dependencies as a graph.
 
-**格納情報**:
-- インポート元ファイルパス
-- インポート先モジュール/パッケージ
-- インポート種別 (named, default, wildcard, etc.)
-- リポジトリID
+**Stored Information**:
+- Source file path
+- Imported module/package
+- Import type (named, default, wildcard, etc.)
+- Repository ID
 
-**用途**:
-- 依存関係の可視化
-- 循環依存検出
-- モジュール境界の分析
+**Use Cases**:
+- Dependency visualization
+- Circular dependency detection
+- Module boundary analysis
 
-### 4. Vector Index（複数粒度）
+### 4. Vector Index (Multi-Granularity)
 
-コードを意味ベクトル化して検索可能にする。
+Enables semantic search by vectorizing code at multiple levels.
 
-#### 粒度レベル
+#### Granularity Levels
 
-**a. クラス/構造体レベル（概要）**
-- 対象: クラス、構造体、インターフェース全体
-- 内容: クラス定義 + メソッドシグネチャ一覧 + ドキュメント
-- 用途: 「どんなクラスか」「どんなメソッドがあるか」の理解
+**a. Class/Struct Level (Overview)**
+- Target: Classes, structs, interfaces
+- Content: Class definition + method signatures + documentation
+- Use case: Understanding "what is this class" and "what methods does it have"
 
-**b. 関数/メソッドレベル（詳細）**
-- 対象: 個別の関数・メソッド
-- 内容: 関数本体 + ドキュメント + シグネチャ
-- 用途: 「どう実装されているか」の理解
+**b. Function/Method Level (Details)**
+- Target: Individual functions/methods
+- Content: Function body + documentation + signature
+- Use case: Understanding "how is this implemented"
 
-**格納情報（Qdrantのpayload）**:
-- シンボルID（Symbol Indexとの紐付け）
-- 埋め込みベクトル（次元数: モデル依存、例: 768次元）
-- 粒度レベル (class/function)
-- リポジトリID
-- ファイルパス
-- 言語
-- シンボル種別
-- シンボル名
-- テキスト内容（スニペット、検索結果表示用）
+**Stored Information**:
+- Symbol ID (links to Symbol Index)
+- Embedding vector (dimension: model-dependent, e.g., 768)
+- Granularity level (class/function)
+- Repository ID
+- File path
+- Language
+- Symbol kind
+- Symbol name
+- Text content (snippet for display)
 
-**埋め込みモデル**:
-- Ollamaで実行（例: `nomic-embed-text`, `mxbai-embed-large`）
-- ローカル実行必須
+**Embedding Model**:
+- Executed via Ollama (e.g., `nomic-embed-text`, `mxbai-embed-large`)
+- Local execution required
 
-**Qdrantの利点**:
-- メタデータとベクトルを一元管理
-- フィルタリング検索（例: 「Goの関数のみ」「特定リポジトリのみ」）
-- ハイブリッド検索（ベクトル類似度 + メタデータ条件）
-
-**用途**:
-- セマンティック検索（自然言語クエリで類似コード検索）
-- コード理解支援
+**Use Cases**:
+- Semantic search (natural language queries for similar code)
+- Code comprehension support
 
 ### 5. Ownership Index
 
-各ファイル・関数の変更履歴から所有者情報を取得。
+Tracks code ownership based on git history.
 
-**格納情報**:
-- ファイルパス
-- 行範囲
-- 著者名
-- 最終更新日時
-- コミット回数
-- リポジトリID
+**Stored Information**:
+- File path
+- Line range
+- Author name
+- Last update timestamp
+- Commit count
+- Repository ID
 
-**データソース**:
-- `git blame` の結果をパース
+**Data Source**:
+- Parsed from `git blame` output
 
-**用途**:
-- コードオーナーシップの把握
-- レビュワー推薦
-- 変更影響範囲の分析
+**Use Cases**:
+- Code ownership tracking
+- Reviewer recommendation
+- Change impact analysis
 
 ---
 
-## データスキーマ（SQLite）
+## Database Schema (SQLite)
 
-### テーブル設計例
+### Table Design
 
 ```sql
--- リポジトリ管理
+-- Repository Management
 CREATE TABLE repositories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -232,11 +199,11 @@ CREATE TABLE repositories (
     updated_at INTEGER NOT NULL
 );
 
--- ファイル管理
+-- File Management
 CREATE TABLE files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     repository_id INTEGER NOT NULL,
-    path TEXT NOT NULL, -- リポジトリルートからの相対パス
+    path TEXT NOT NULL, -- Relative path from repository root
     language TEXT NOT NULL,
     last_modified INTEGER NOT NULL, -- Unix timestamp
     file_hash TEXT NOT NULL, -- SHA256
@@ -245,7 +212,7 @@ CREATE TABLE files (
     UNIQUE(repository_id, path)
 );
 
--- シンボル
+-- Symbols
 CREATE TABLE symbols (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     file_id INTEGER NOT NULL,
@@ -255,11 +222,11 @@ CREATE TABLE symbols (
     start_column INTEGER NOT NULL,
     end_line INTEGER NOT NULL,
     end_column INTEGER NOT NULL,
-    scope TEXT, -- namespace, class名など
+    scope TEXT, -- namespace, class name, etc.
     visibility TEXT, -- public, private, protected
     docstring TEXT,
-    signature TEXT, -- 関数シグネチャなど
-    code_body TEXT, -- コード本体（全文検索・ベクトル化用）
+    signature TEXT, -- Function signature, etc.
+    code_body TEXT, -- Code body (for full-text search and vectorization)
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 );
 CREATE INDEX idx_symbols_name ON symbols(name);
@@ -271,7 +238,7 @@ CREATE TABLE call_graph (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     caller_symbol_id INTEGER NOT NULL,
     callee_symbol_id INTEGER,
-    callee_name TEXT NOT NULL, -- 外部関数の場合はIDがnullでも名前を記録
+    callee_name TEXT NOT NULL, -- Record name even if ID is null (external functions)
     call_line INTEGER NOT NULL,
     call_column INTEGER NOT NULL,
     call_type TEXT, -- direct, method, indirect
@@ -310,21 +277,20 @@ CREATE TABLE ownership (
 CREATE INDEX idx_ownership_file ON ownership(file_id);
 CREATE INDEX idx_ownership_author ON ownership(author_name);
 
--- Vector Index メタデータ（Qdrant同期用）
+-- Vector Embeddings
 CREATE TABLE embeddings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol_id INTEGER NOT NULL,
     granularity TEXT NOT NULL, -- 'class' or 'function'
-    qdrant_point_id TEXT NOT NULL UNIQUE, -- QdrantのPoint UUID
-    content_hash TEXT NOT NULL, -- 埋め込み対象コンテンツのハッシュ
+    vector BLOB NOT NULL, -- Embedding vector stored as BLOB
+    content_hash TEXT NOT NULL, -- Hash of embedded content
     created_at INTEGER NOT NULL,
     FOREIGN KEY (symbol_id) REFERENCES symbols(id) ON DELETE CASCADE
 );
 CREATE INDEX idx_embeddings_symbol ON embeddings(symbol_id);
 CREATE INDEX idx_embeddings_granularity ON embeddings(granularity);
-CREATE INDEX idx_embeddings_qdrant_id ON embeddings(qdrant_point_id);
 
--- 全文検索用仮想テーブル（FTS5）
+-- Full-text Search Virtual Table (FTS5)
 CREATE VIRTUAL TABLE symbols_fts USING fts5(
     symbol_id UNINDEXED,
     symbol_name,
@@ -334,17 +300,16 @@ CREATE VIRTUAL TABLE symbols_fts USING fts5(
     file_path,
     content='symbols',
     content_rowid='id',
-    tokenize='porter unicode61'  -- ポーターステマー + Unicode対応
+    tokenize='porter unicode61'  -- Porter stemmer + Unicode support
 );
 
--- FTS5の自動同期トリガー（INSERT）
+-- FTS5 Auto-sync Triggers
 CREATE TRIGGER symbols_ai AFTER INSERT ON symbols BEGIN
     INSERT INTO symbols_fts(rowid, symbol_id, symbol_name, signature, docstring, code_body, file_path)
     SELECT new.id, new.id, new.name, new.signature, new.docstring, new.code_body,
            (SELECT path FROM files WHERE id = new.file_id);
 END;
 
--- FTS5の自動同期トリガー（UPDATE）
 CREATE TRIGGER symbols_au AFTER UPDATE ON symbols BEGIN
     UPDATE symbols_fts
     SET symbol_name = new.name,
@@ -354,7 +319,6 @@ CREATE TRIGGER symbols_au AFTER UPDATE ON symbols BEGIN
     WHERE rowid = new.id;
 END;
 
--- FTS5の自動同期トリガー（DELETE）
 CREATE TRIGGER symbols_ad AFTER DELETE ON symbols BEGIN
     DELETE FROM symbols_fts WHERE rowid = old.id;
 END;
@@ -362,190 +326,85 @@ END;
 
 ---
 
-## 更新戦略
+## Update Strategy
 
-### 差分検知
+### Change Detection
 
-- **タイムスタンプベース**: ファイルの `last_modified` とDBの `indexed_at` を比較
-- **ハッシュ検証**: 内容のSHA256ハッシュで実質的な変更を検知
+- **Timestamp-based**: Compare file `last_modified` with DB `indexed_at`
+- **Hash Verification**: Use SHA256 hash to detect actual content changes
 
-### インクリメンタル更新
+### Incremental Updates
 
-1. リポジトリをスキャンして変更ファイルを検出
-2. 変更ファイルのみ再パース
-3. 関連するインデックス（Symbol, Call Graph, Vector等）を部分更新
-4. 削除されたファイルのインデックスをクリーンアップ
+1. Scan repositories for changed files
+2. Re-parse only changed files
+3. Partially update related indexes (Symbol, Call Graph, Vector, etc.)
+4. Clean up indexes for deleted files
 
-### 更新トリガー
+### Update Triggers
 
-- **手動実行**: CLI コマンドによる明示的なインデックス更新
-- **定期実行**: cron等で定期的にインデックス更新を実行
-
----
-
-## パフォーマンス要件
-
-| 項目 | 要件 |
-|------|------|
-| 対象リポジトリ数 | 1〜20 |
-| インデックス構築時間 | 最長5分（フルスキャン時） |
-| インクリメンタル更新 | 変更ファイル数に応じて数秒〜数十秒 |
-| 検索レスポンス | 1秒以内 |
-
-### 最適化戦略
-
-- 並列処理: ファイル/リポジトリ単位でゴルーチンを活用
-- バッチ埋め込み: Ollamaへの埋め込みリクエストをバッチ化
-- FTS5最適化: `PRAGMA optimize` で定期的にインデックス最適化
-- バッチアップサート: Qdrantへのポイント追加をバッチ化
-- 永続化: Qdrantのスナップショット機能で高速起動
-- SQLite設定: WALモード、適切なcache_size設定
+- **Manual**: Explicit index update via CLI command
+- **Scheduled**: Periodic updates via cron or similar
 
 ---
 
-## CLI インターフェース
+## Performance Requirements
 
-### コマンド設計（案）
+| Item | Requirement |
+|------|-------------|
+| Repository Count | 1-20 |
+| Full Index Time | Max 5 minutes |
+| Incremental Update | Seconds to tens of seconds (depends on changed file count) |
+| Search Response | < 1 second |
+
+### Optimization Strategies
+
+- Parallel processing: Leverage goroutines per file/repository
+- Batch embedding: Batch Ollama embedding requests
+- FTS5 optimization: Periodic `PRAGMA optimize`
+- SQLite settings: WAL mode, appropriate cache_size
+- Vector search: Brute-force cosine similarity is sufficient for 1-20 repositories
+
+---
+
+## CLI Interface
+
+### Command Design
 
 ```bash
-# リポジトリ追加
+# Repository Management
 cogi add <repo-path> [--name <name>]
-
-# リポジトリ削除
 cogi remove <repo-name>
 
-# インデックス構築・更新
+# Indexing
 cogi index [--repo <name>] [--full]
 
-# シンボル検索
+# Search
 cogi search symbol <query> [--kind <type>] [--repo <name>]
-
-# キーワード検索（全文検索）
 cogi search keyword <query> [--lang <language>] [--repo <name>]
-
-# セマンティック検索
 cogi search semantic <query> [--granularity <class|function>] [--limit <n>]
 
-# Call Graph 表示
+# Graph Visualization
 cogi graph calls <symbol-name> [--depth <n>] [--direction <caller|callee>]
+cogi graph imports <file-path> [--depth <n>] [--direction <dependency|importer>]
 
-# Import Graph 表示
-cogi graph imports <file-path> [--depth <n>]
-
-# Ownership 表示
+# Ownership
 cogi ownership <file-path> [--line <n>]
 
-# ステータス確認
+# Export
+cogi export [--output <file>] [--type <all|symbols>] [--repo <name>]
+
+# Status
 cogi status
 
-# 設定確認・変更
+# Configuration
 cogi config [--set <key>=<value>]
 ```
 
 ---
 
-## 実装フェーズ
-
-### Phase 1: 基盤構築
-- [ ] プロジェクト構造とCLI骨格
-- [ ] SQLiteスキーマ作成
-- [ ] Tree-sitter統合（主要言語: Go, TypeScript, Python）
-- [ ] Symbol Index構築
-
-### Phase 2: グラフ構築
-- [ ] Call Graph生成
-- [ ] Import Graph生成
-- [ ] グラフ検索・可視化機能
-
-### Phase 3: 検索機能
-- [ ] FTS5全文検索実装（キーワード検索）
-- [ ] Qdrant統合（起動・接続管理）
-- [ ] Ollama連携（埋め込み生成）
-- [ ] セマンティック検索実装（Qdrantクライアント）
-
-### Phase 4: 高度な機能
-- [ ] インクリメンタル更新
-- [ ] 複数粒度ベクトルインデックス
-- [ ] パフォーマンス最適化
-
-### Phase 5: 拡張
-- [ ] 残り言語対応（Rust, C#, Java等）
-- [ ] エクスポート機能（JSONなど）
-- [ ] ドキュメント整備
-
----
-
-## 依存ライブラリ（予定）
-
-```go
-// パーサー
-github.com/smacker/go-tree-sitter
-github.com/smacker/go-tree-sitter/[language]
-
-// データベース（FTS5込み）
-github.com/mattn/go-sqlite3
-
-// ベクトル検索
-github.com/qdrant/go-client
-
-// Ollama連携
-github.com/ollama/ollama/api
-
-// CLI
-github.com/spf13/cobra
-github.com/spf13/viper
-
-// ユーティリティ
-github.com/go-git/go-git/v5
-```
-
----
-
-## 設定ファイル（案）
-
-```yaml
-# config.yaml
-database:
-  path: ~/.cogi/data.db
-  # SQLite設定
-  wal_mode: true
-  cache_size_mb: 256
-
-embedding:
-  provider: ollama
-  model: nomic-embed-text
-  endpoint: http://localhost:11434
-  dimension: 768
-  batch_size: 32
-
-indexing:
-  max_file_size_mb: 10
-  exclude_patterns:
-    - "*/node_modules/*"
-    - "*/vendor/*"
-    - "*/.git/*"
-    - "*/dist/*"
-    - "*/build/*"
-
-performance:
-  max_workers: 8
-```
-
----
-
-## 今後の検討事項
-
-- [ ] リポジトリ間の依存関係の扱い（モノレポ対応など）
-- [ ] プライベートリポジトリの認証
-- [ ] Webインターフェース（将来的に）
-- [ ] LSP（Language Server Protocol）対応
-- [ ] IDE拡張（VSCode, IntelliJ等）
-- [ ] チーム共有機能（ネットワーク越しの検索）
-
----
-
-## 参考
+## References
 
 - Tree-sitter: https://tree-sitter.github.io/tree-sitter/
 - SQLite FTS5: https://www.sqlite.org/fts5.html
+- SQLite BLOB: https://www.sqlite.org/datatype3.html
 - Ollama: https://ollama.ai/
