@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -209,7 +210,20 @@ func TestDetectLanguage(t *testing.T) {
 		{"test.js", LangJavaScript},
 		{"test.jsx", LangJavaScript},
 		{"test.py", LangPython},
-		{"test.txt", LangUnknown},
+		{"test.rs", LangRust},
+		{"test.java", LangJava},
+		{"test.cs", LangCSharp},
+		{"test.html", LangHTML},
+		{"test.htm", LangHTML},
+		{"test.css", LangCSS},
+		{"test.json", LangJSON},
+		{"test.txt", LangText},
+		{"test.md", LangText},
+		{"test.xml", LangText},
+		{"test.yaml", LangText},
+		{"test.yml", LangText},
+		{"test.toml", LangText},
+		{"test.unknown", LangText}, // Unknown extensions fallback to text
 	}
 
 	for _, tt := range tests {
@@ -217,5 +231,88 @@ func TestDetectLanguage(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("DetectLanguage(%q) = %v, want %v", tt.path, got, tt.want)
 		}
+	}
+}
+
+// TestJSONParser tests JSON parsing
+func TestJSONParser(t *testing.T) {
+	sourceCode := []byte(`{
+  "name": "test",
+  "version": "1.0.0",
+  "config": {
+    "database": {
+      "path": "/data/db"
+    }
+  }
+}`)
+
+	parser, err := New(LangJSON)
+	if err != nil {
+		t.Fatalf("Failed to create JSON parser: %v", err)
+	}
+
+	result, err := parser.Parse(context.Background(), sourceCode)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	// JSON parser should extract property symbols
+	if len(result.Symbols) == 0 {
+		t.Error("Expected symbols to be extracted from JSON")
+	}
+
+	// Check for nested properties
+	hasNestedProperty := false
+	for _, sym := range result.Symbols {
+		if strings.Contains(sym.Name, ".") {
+			hasNestedProperty = true
+			break
+		}
+	}
+	if !hasNestedProperty {
+		t.Error("Expected nested properties in JSON symbols")
+	}
+}
+
+// TestTextParser tests text parsing
+func TestTextParser(t *testing.T) {
+	sourceCode := []byte(`TEST DOCUMENT
+
+Introduction:
+This is a test document for the text parser.
+
+Section 1: Features
+- Feature A
+- Feature B
+
+IMPORTANT NOTES
+Make sure to test thoroughly.
+`)
+
+	parser, err := New(LangText)
+	if err != nil {
+		t.Fatalf("Failed to create text parser: %v", err)
+	}
+
+	result, err := parser.Parse(context.Background(), sourceCode)
+	if err != nil {
+		t.Fatalf("Failed to parse text: %v", err)
+	}
+
+	// Text parser should create at least a document symbol
+	if len(result.Symbols) == 0 {
+		t.Error("Expected at least one symbol from text parsing")
+	}
+
+	// Check for document symbol
+	hasDocSymbol := false
+	for _, sym := range result.Symbols {
+		if sym.Kind == "document" {
+			hasDocSymbol = true
+			break
+		}
+	}
+	if !hasDocSymbol {
+		t.Error("Expected a document symbol from text parser")
 	}
 }
