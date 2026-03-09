@@ -15,24 +15,10 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
             artifact_name: cogi-linux-amd64
-          - os: ubuntu-latest
-            goos: linux
-            goarch: arm64
-            artifact_name: cogi-linux-arm64
           - os: macos-latest
-            goos: darwin
-            goarch: amd64
-            artifact_name: cogi-darwin-amd64
-          - os: macos-latest
-            goos: darwin
-            goarch: arm64
             artifact_name: cogi-darwin-arm64
           - os: windows-latest
-            goos: windows
-            goarch: amd64
             artifact_name: cogi-windows-amd64.exe
     runs-on: ${{ matrix.os }}
     steps:
@@ -48,7 +34,7 @@ jobs:
           cache: true
 
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc
@@ -56,8 +42,6 @@ jobs:
       - name: Build binary
         env:
           CGO_ENABLED: 1
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
         run: |
           go build -tags fts5 -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.artifact_name }} ./cmd/cogi
 
