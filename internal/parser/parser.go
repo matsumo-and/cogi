@@ -8,8 +8,14 @@ import (
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/csharp"
+	"github.com/smacker/go-tree-sitter/css"
 	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/html"
+	"github.com/smacker/go-tree-sitter/java"
+	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/python"
+	"github.com/smacker/go-tree-sitter/rust"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
@@ -21,6 +27,13 @@ const (
 	LangTypeScript Language = "typescript"
 	LangJavaScript Language = "javascript"
 	LangPython     Language = "python"
+	LangRust       Language = "rust"
+	LangJava       Language = "java"
+	LangCSharp     Language = "csharp"
+	LangHTML       Language = "html"
+	LangCSS        Language = "css"
+	LangJSON       Language = "json"
+	LangText       Language = "text"
 	LangUnknown    Language = "unknown"
 )
 
@@ -71,6 +84,14 @@ type Parser struct {
 
 // New creates a new parser for the given language
 func New(lang Language) (*Parser, error) {
+	// JSON and Text don't need tree-sitter parsers
+	if lang == LangJSON || lang == LangText {
+		return &Parser{
+			parser: nil,
+			lang:   lang,
+		}, nil
+	}
+
 	parser := sitter.NewParser()
 
 	var tsLang *sitter.Language
@@ -79,8 +100,20 @@ func New(lang Language) (*Parser, error) {
 		tsLang = golang.GetLanguage()
 	case LangTypeScript:
 		tsLang = typescript.GetLanguage()
+	case LangJavaScript:
+		tsLang = javascript.GetLanguage()
 	case LangPython:
 		tsLang = python.GetLanguage()
+	case LangRust:
+		tsLang = rust.GetLanguage()
+	case LangJava:
+		tsLang = java.GetLanguage()
+	case LangCSharp:
+		tsLang = csharp.GetLanguage()
+	case LangHTML:
+		tsLang = html.GetLanguage()
+	case LangCSS:
+		tsLang = css.GetLanguage()
 	default:
 		return nil, fmt.Errorf("unsupported language: %s", lang)
 	}
@@ -105,6 +138,24 @@ func (p *Parser) ParseFile(ctx context.Context, filePath string) (*ParseResult, 
 
 // Parse parses source code and extracts symbols, calls, and imports
 func (p *Parser) Parse(ctx context.Context, sourceCode []byte) (*ParseResult, error) {
+	result := &ParseResult{
+		Symbols:   []*Symbol{},
+		CallSites: []*CallSite{},
+		Imports:   []*Import{},
+	}
+
+	// Special handling for JSON and Text (no tree-sitter needed)
+	if p.lang == LangJSON {
+		p.parseJSON(nil, sourceCode, result)
+		return result, nil
+	}
+
+	if p.lang == LangText {
+		p.parseText(nil, sourceCode, result)
+		return result, nil
+	}
+
+	// For all other languages, use tree-sitter
 	tree, err := p.parser.ParseCtx(ctx, nil, sourceCode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse: %w", err)
@@ -113,12 +164,6 @@ func (p *Parser) Parse(ctx context.Context, sourceCode []byte) (*ParseResult, er
 
 	root := tree.RootNode()
 
-	result := &ParseResult{
-		Symbols:   []*Symbol{},
-		CallSites: []*CallSite{},
-		Imports:   []*Import{},
-	}
-
 	switch p.lang {
 	case LangGo:
 		p.parseGo(root, sourceCode, result)
@@ -126,6 +171,16 @@ func (p *Parser) Parse(ctx context.Context, sourceCode []byte) (*ParseResult, er
 		p.parseTypeScript(root, sourceCode, result)
 	case LangPython:
 		p.parsePython(root, sourceCode, result)
+	case LangRust:
+		p.parseRust(root, sourceCode, result)
+	case LangJava:
+		p.parseJava(root, sourceCode, result)
+	case LangCSharp:
+		p.parseCSharp(root, sourceCode, result)
+	case LangHTML:
+		p.parseHTML(root, sourceCode, result)
+	case LangCSS:
+		p.parseCSS(root, sourceCode, result)
 	default:
 		return nil, fmt.Errorf("unsupported language: %s", p.lang)
 	}
@@ -146,8 +201,24 @@ func DetectLanguage(filePath string) Language {
 		return LangJavaScript
 	case ".py":
 		return LangPython
+	case ".rs":
+		return LangRust
+	case ".java":
+		return LangJava
+	case ".cs":
+		return LangCSharp
+	case ".html", ".htm":
+		return LangHTML
+	case ".css":
+		return LangCSS
+	case ".json":
+		return LangJSON
+	case ".txt", ".md", ".markdown", ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf", ".config":
+		// Common text-based formats fallback to text parser
+		return LangText
 	default:
-		return LangUnknown
+		// Unknown extensions fallback to text parser
+		return LangText
 	}
 }
 

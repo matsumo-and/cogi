@@ -19,6 +19,7 @@
 
 以下の言語を対象とする：
 
+### フルサポート（Tree-sitterベース）
 - Go
 - JavaScript / TypeScript
 - Java
@@ -26,9 +27,15 @@
 - Rust
 - C#
 - HTML / CSS
-- XML
+- JSON
+
+### テキストフォールバック
 - Markdown
-- Plain Text
+- XML
+- YAML / TOML / INI
+- その他のテキストファイル
+
+未対応の拡張子は自動的にテキストパーサーで処理され、基本的なドキュメント構造を抽出します。
 
 ---
 
@@ -463,7 +470,6 @@ cogi config [--set <key>=<value>]
 
 ### Phase 5: 拡張
 - [ ] 残り言語対応（Rust, C#, Java等）
-- [ ] 定期実行機能
 - [ ] エクスポート機能（JSONなど）
 - [ ] ドキュメント整備
 
