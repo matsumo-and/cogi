@@ -7,7 +7,7 @@
 
 ![Cogi Demo](assets/demo.gif)
 
-**Cogi** (Corgi + Cognitive) is a local-first code intelligence engine that combines Tree-sitter parsing, SQLite FTS5 full-text search, and vector embeddings to enable advanced code search and RAG (Retrieval-Augmented Generation) capabilities across multiple repositories.
+**Cogi** turns your codebase into a knowledge base for AI.
 
 ## Features
 
