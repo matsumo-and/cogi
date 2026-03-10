@@ -27,12 +27,12 @@ func New(database *db.DB) *Analyzer {
 
 // BlameResult represents a single line's blame information
 type BlameResult struct {
-	Line         int
-	CommitHash   string
-	AuthorName   string
-	AuthorEmail  string
-	CommitDate   time.Time
-	Content      string
+	Line        int
+	CommitHash  string
+	AuthorName  string
+	AuthorEmail string
+	CommitDate  time.Time
+	Content     string
 }
 
 // AnalyzeFile analyzes ownership for a single file
@@ -58,14 +58,14 @@ func (a *Analyzer) AnalyzeFile(ctx context.Context, repoPath, filePath string, f
 	// Insert new ownership data
 	for _, ow := range ownershipRanges {
 		ownership := &db.Ownership{
-			FileID:          fileID,
-			StartLine:       ow.StartLine,
-			EndLine:         ow.EndLine,
-			AuthorName:      ow.AuthorName,
-			AuthorEmail:     ow.AuthorEmail,
-			LastCommitHash:  ow.CommitHash,
-			LastCommitDate:  ow.CommitDate,
-			CommitCount:     ow.CommitCount,
+			FileID:         fileID,
+			StartLine:      ow.StartLine,
+			EndLine:        ow.EndLine,
+			AuthorName:     ow.AuthorName,
+			AuthorEmail:    ow.AuthorEmail,
+			LastCommitHash: ow.CommitHash,
+			LastCommitDate: ow.CommitDate,
+			CommitCount:    ow.CommitCount,
 		}
 
 		if err := a.db.CreateOwnership(ownership); err != nil {

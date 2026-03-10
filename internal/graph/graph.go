@@ -28,12 +28,12 @@ type CallNode struct {
 
 // ImportNode represents a node in the import graph
 type ImportNode struct {
-	FilePath    string
-	ImportPath  string
-	ImportType  string
-	Symbols     []string
-	Depth       int
-	LineNumber  int
+	FilePath   string
+	ImportPath string
+	ImportType string
+	Symbols    []string
+	Depth      int
+	LineNumber int
 }
 
 // GetCallersTree retrieves all callers of a symbol as a tree

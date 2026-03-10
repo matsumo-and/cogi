@@ -20,9 +20,9 @@ import (
 
 // Indexer handles code indexing operations
 type Indexer struct {
-	db              *db.DB
-	config          *config.Config
-	embedClient     embedding.Client
+	db                *db.DB
+	config            *config.Config
+	embedClient       embedding.Client
 	ownershipAnalyzer *ownership.Analyzer
 }
 

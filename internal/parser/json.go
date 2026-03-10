@@ -33,14 +33,14 @@ func (p *Parser) walkJSONStructure(data interface{}, path string, result *ParseR
 
 			// Create symbol for each key
 			symbol := &Symbol{
-				Name:       currentPath,
-				Kind:       "property",
-				StartLine:  0, // JSON parsing doesn't preserve line numbers easily
+				Name:        currentPath,
+				Kind:        "property",
+				StartLine:   0, // JSON parsing doesn't preserve line numbers easily
 				StartColumn: 0,
-				EndLine:    0,
-				EndColumn:  0,
-				Visibility: "public",
-				Signature:  fmt.Sprintf("%s: %T", currentPath, value),
+				EndLine:     0,
+				EndColumn:   0,
+				Visibility:  "public",
+				Signature:   fmt.Sprintf("%s: %T", currentPath, value),
 			}
 
 			result.Symbols = append(result.Symbols, symbol)
@@ -53,14 +53,14 @@ func (p *Parser) walkJSONStructure(data interface{}, path string, result *ParseR
 		// For now, we just note the array type
 		if path != "" {
 			symbol := &Symbol{
-				Name:       path,
-				Kind:       "array",
-				StartLine:  0,
+				Name:        path,
+				Kind:        "array",
+				StartLine:   0,
 				StartColumn: 0,
-				EndLine:    0,
-				EndColumn:  0,
-				Visibility: "public",
-				Signature:  fmt.Sprintf("%s: array[%d]", path, len(v)),
+				EndLine:     0,
+				EndColumn:   0,
+				Visibility:  "public",
+				Signature:   fmt.Sprintf("%s: array[%d]", path, len(v)),
 			}
 			result.Symbols = append(result.Symbols, symbol)
 		}

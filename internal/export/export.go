@@ -86,13 +86,13 @@ type RepositoryExport struct {
 
 // ExportData represents all exportable data
 type ExportData struct {
-	ExportedAt   time.Time              `json:"exported_at"`
-	Version      string                 `json:"version"`
-	Repositories []RepositoryExport     `json:"repositories,omitempty"`
-	Symbols      []SymbolExport         `json:"symbols,omitempty"`
-	CallGraph    []CallGraphExport      `json:"call_graph,omitempty"`
-	ImportGraph  []ImportGraphExport    `json:"import_graph,omitempty"`
-	Ownership    []OwnershipExport      `json:"ownership,omitempty"`
+	ExportedAt   time.Time           `json:"exported_at"`
+	Version      string              `json:"version"`
+	Repositories []RepositoryExport  `json:"repositories,omitempty"`
+	Symbols      []SymbolExport      `json:"symbols,omitempty"`
+	CallGraph    []CallGraphExport   `json:"call_graph,omitempty"`
+	ImportGraph  []ImportGraphExport `json:"import_graph,omitempty"`
+	Ownership    []OwnershipExport   `json:"ownership,omitempty"`
 }
 
 // Exporter handles data export

@@ -25,9 +25,9 @@ type Client interface {
 
 // OllamaClient implements the Client interface for Ollama
 type OllamaClient struct {
-	endpoint  string
-	model     string
-	dimension int
+	endpoint   string
+	model      string
+	dimension  int
 	httpClient *http.Client
 }
 
