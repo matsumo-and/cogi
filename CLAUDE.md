@@ -1,315 +1,86 @@
-# Cogi - 開発ガイドライン
+# Cogi - Development Guidelines
 
-このドキュメントは、Cogiの開発における設計原則、技術選択の理由、注意点をまとめたものです。
+## Core Principles
 
-## プロジェクトの哲学
+1. **Local-first**: All features work completely offline
+2. **Simplicity**: Minimal dependencies, avoid complexity
+3. **Performance**: Index 1-20 repos in under 5 minutes
+4. **Practicality**: Focus on actual code search and understanding
 
-### コアバリュー
+## Architecture
 
-1. **ローカルファースト**: すべての機能がローカル環境で完結すること
-2. **シンプルさ**: 複雑さを避け、必要最小限の依存関係に留める
-3. **実用性**: 実際のコード検索・理解に役立つ機能に集中する
-4. **パフォーマンス**: 1-20リポジトリを5分以内でインデックス化
+### SQLite-Centric Design
 
-### プロジェクト名の由来
+Everything is stored in SQLite:
+- Symbol Index (structured metadata)
+- Call/Import Graph
+- Ownership Index
+- FTS5 (full-text search with auto-sync triggers)
+- Embeddings (vectors stored as BLOBs)
 
-**Cogi** (コギ) = **Corgi** (コーギー犬 🐶) + **Cognitive** (認知的)
+**Why SQLite?**
+- Zero additional dependencies (fully local)
+- Unified metadata and vector storage
+- Brute-force cosine similarity is fast enough for 1-20 repos
+- No separate processes needed
 
-賢いコーギーのように、コードベースを素早く探索し、深く理解するツールを目指す。
+### Vector Index Granularity
 
----
+1. **Class/Struct Level**: Overview (class + method signatures + docs)
+2. **Function/Method Level**: Details (implementation + signature + docs)
 
-## 技術選択の理由
+## Critical Build Requirement
 
-### なぜSQLiteベクトル埋め込み？
-
-**選択理由:**
-- すでにSQLiteを使っているため追加依存なし（完全ローカル）
-- メタデータとベクトルをSQLiteで一元管理
-- 1-20リポジトリ規模なら十分な性能（ブルートフォース検索）
-- シンプルで保守性が高い
-- 別プロセス起動不要
-
-**却下された選択肢:**
-- ❌ **Qdrant**: 別プロセス起動が必要、1-20リポジトリにはオーバースペック
-- ❌ **FAISS/HNSWlib**: CGo依存が複雑、メタデータ管理が別途必要
-- ❌ **sqlite-vss/sqlite-vec**: 拡張ライブラリの追加が必要
-
-### なぜSQLite FTS5？
-
-**選択理由:**
-- すでにSQLiteを使っているため追加依存なし
-- 軽量・高速・十分な機能（BM25ランキング）
-- トリガーで自動同期（メンテナンスフリー）
-- コード検索にはタイポ耐性は不要
-
-**却下された選択肢:**
-- ❌ **Bleve**: 追加依存、メモリ使用量多い、オーバースペック
-- ❌ **Meilisearch/Elasticsearch**: 別プロセス起動が必要、複雑すぎる
-
-### なぜOllama？
-
-**選択理由:**
-- ローカル実行必須要件を満たす
-- セットアップが簡単
-- 複数の埋め込みモデルをサポート（nomic-embed-text等）
-- API経由で簡単に利用可能
-
----
-
-## アーキテクチャ原則
-
-### SQLite統合構成
-
-```
-SQLite: すべてをSQLiteで管理
-  ├─ Symbol Index（構造化データ）
-  ├─ Call/Import Graph
-  ├─ Ownership Index
-  ├─ FTS5（全文検索、トリガーで自動同期）
-  └─ Embeddings（ベクトル埋め込みをBLOBで保存）
-```
-
-**設計意図:**
-- SQLite一つで完結（シンプル、ローカルファースト）
-- BLOBでベクトルを保存、コサイン類似度で検索
-- メタデータとベクトルの完全な一貫性
-- 1-20リポジトリならブルートフォースで十分高速
-
-### 複数粒度のベクトルインデックス
-
-**2つの粒度:**
-
-1. **クラス/構造体レベル（概要）**
-   - クラス定義 + メソッドシグネチャ一覧 + ドキュメント
-   - 用途: 「どんなクラスか」「どんなメソッドがあるか」
-
-2. **関数/メソッドレベル（詳細）**
-   - 関数本体 + ドキュメント + シグネチャ
-   - 用途: 「どう実装されているか」
-
-**理由:**
-- ユースケースに応じた検索粒度の選択
-- 大まかな理解から詳細な実装まで段階的にアクセス可能
-
-### インクリメンタル更新
-
-**方針:**
-- タイムスタンプベースの差分検知
-- 変更ファイルのみ再パース
-- SQLiteの部分更新（embeddings含む）
-
-**実装時の注意:**
-- ファイル削除時のクリーンアップを忘れない
-- content_hashで実質的な変更を検知
-- トランザクションで一貫性を保つ
-
----
-
-## 開発時の注意点
-
-### パフォーマンス
-
-**必須最適化:**
-- ✅ 並列処理: ファイル/リポジトリ単位でゴルーチン活用
-- ✅ バッチ処理: Ollama埋め込み生成、SQLiteバッチINSERTをバッチ化
-- ✅ SQLite設定: WALモード、適切なcache_size
-- ✅ FTS5最適化: `PRAGMA optimize`で定期的に実行
-- ✅ ベクトル検索: 1-20リポジトリならブルートフォースで十分
-
-**パフォーマンス目標:**
-- インデックス構築: 最長5分（フルスキャン）
-- インクリメンタル更新: 数秒〜数十秒
-- 検索レスポンス: 1秒以内
-
-### データ整合性
-
-**重要:**
-- すべてSQLiteで管理されるため一貫性が保証される
-- トランザクションを適切に使う
-- エラー時のロールバック戦略
-
-**FTS5トリガー:**
-```sql
--- INSERT/UPDATE/DELETEで自動同期
--- トリガーを必ず設定すること
-CREATE TRIGGER symbols_ai AFTER INSERT ON symbols ...
-CREATE TRIGGER symbols_au AFTER UPDATE ON symbols ...
-CREATE TRIGGER symbols_ad AFTER DELETE ON symbols ...
-```
-
-### ビルド時の注意
-
-**重要: FTS5ビルドタグが必須**
-
-SQLite FTS5を使用するため、ビルド時に必ずタグを指定すること：
+**IMPORTANT: Always use the `fts5` build tag**
 
 ```bash
-# ❌ 間違い - FTS5が有効にならない
-go build ./cmd/cogi
-
-# ✅ 正しい - FTS5タグを指定
+# Correct
 go build -tags fts5 ./cmd/cogi
-
-# ✅ 推奨 - Makefileを使用
 make build
+
+# Wrong - FTS5 won't work
+go build ./cmd/cogi
 ```
 
-**Makefileの使用:**
-- `make build`: FTS5タグ付きでビルド
-- `make test`: FTS5タグ付きでテスト実行
-- `make install`: ビルド＋インストール
-- `make clean`: 生成ファイルの削除
+## Performance Requirements
 
-### Tree-sitter統合
+- Full index build: ≤5 minutes
+- Incremental update: seconds to tens of seconds
+- Search response: ≤1 second
 
-**対応言語の優先順位:**
-1. Phase 1: Go, TypeScript, Python（主要言語）
-2. Phase 5: 残り言語（Rust, C#, Java, HTML, CSS等）
+**Optimizations:**
+- Parallel processing (goroutines per file/repo)
+- Batch operations (Ollama embeddings, SQLite inserts)
+- SQLite: WAL mode, optimized cache_size
+- FTS5: Run `PRAGMA optimize` regularly
 
-**パース時の注意:**
-- 大きなファイルは制限（デフォルト10MB）
-- 除外パターン（node_modules, vendor等）を必ず適用
-- パースエラー時は警告を出してスキップ
+## Key Implementation Notes
 
-### Ollama連携
+### Data Consistency
+- Use transactions properly
+- Set up FTS5 auto-sync triggers (INSERT/UPDATE/DELETE)
+- Handle file deletions with cleanup
+- Use content_hash for real change detection
 
-**バッチサイズ:**
-- デフォルト: 32（設定可能）
-- メモリとスループットのバランスを考慮
+### Incremental Updates
+- Timestamp-based diff detection
+- Re-parse only changed files
+- Partial SQLite updates (including embeddings)
 
-**エラーハンドリング:**
-- Ollamaが起動していない場合は明確なエラーメッセージ
-- セマンティック検索が無効でもキーワード検索は動作すること
+### Tree-sitter Parsing
+- File size limit: 10MB default
+- Exclude patterns: node_modules, vendor, etc.
+- Skip on parse error with warning
 
----
+### Ollama Integration
+- Batch size: 32 (configurable)
+- Graceful degradation: keyword search works even if semantic search fails
+- Clear error messages when Ollama is not running
 
-## コーディング規約
+## What NOT to Do
 
-### ディレクトリ構造
-
-```
-cogi/
-├── cmd/
-│   └── cogi/          # CLIエントリーポイント
-├── internal/
-│   ├── db/            # SQLite関連（FTS5 + ベクトル埋め込み）
-│   ├── parser/        # Tree-sitterパーサー
-│   ├── indexer/       # インデックス構築
-│   ├── search/        # 検索エンジン（キーワード + セマンティック）
-│   ├── graph/         # Call/Import Graph
-│   ├── vector/        # ベクトル類似度計算
-│   ├── embedding/     # Ollama連携
-│   └── config/        # 設定管理
-├── pkg/               # 公開API（将来的に）
-├── SPEC.md            # 仕様書
-├── CLAUDE.md          # 開発ガイドライン（このファイル）
-└── README.md          # プロジェクト紹介
-```
-
-### Goコーディングスタイル
-
-- 標準的なGo規約に従う
-- `gofmt`, `golangci-lint`を使用
-- エラーハンドリングを明示的に行う
-- コンテキストを適切に使う（タイムアウト、キャンセル）
-
-### テスト
-
-**必須テスト:**
-- ユニットテスト: 各コンポーネント
-- 統合テスト: DB、Ollama連携
-- E2Eテスト: CLIコマンド
-
-**テストデータ:**
-- 小規模なサンプルリポジトリを用意
-- 各言語の代表的なコードパターンをカバー
-
----
-
-## やってはいけないこと
-
-### ❌ 避けるべき実装
-
-1. **依存関係の肥大化**
-   - 必要最小限のライブラリのみ使用
-   - 標準ライブラリで実装できるものは標準ライブラリを使う
-
-2. **複雑なセットアップ**
-   - ユーザーが簡単に始められることを優先
-   - デフォルト設定で動作すること
-
-3. **外部サービス依存**
-   - ローカル実行を必須とする
-   - 外部APIへの依存は避ける
-
-4. **過度な抽象化**
-   - YAGNIの原則（You Aren't Gonna Need It）
-   - 将来の拡張性よりも現在の実用性を優先
-
-5. **パフォーマンス犠牲**
-   - 5分以内のインデックス構築を守る
-   - メモリ使用量に注意（並列処理のバランス）
-
----
-
-## 今後の拡張
-
-### 検討中の機能
-
-- [ ] LSP（Language Server Protocol）対応
-- [ ] IDE拡張（VSCode, IntelliJ）
-- [ ] Webインターフェース
-- [ ] チーム共有機能（ネットワーク越しの検索）
-
-### 拡張時の原則
-
-1. コアバリューを守る（ローカルファースト、シンプルさ）
-2. オプショナル機能として実装（コア機能に影響しない）
-3. 既存機能との一貫性を保つ
-
----
-
-## リリースフロー
-
-### バージョニング
-
-Semantic Versioning 2.0.0に従う:
-- MAJOR: 破壊的変更
-- MINOR: 後方互換性のある機能追加
-- PATCH: バグフィックス
-
-### リリースチェックリスト
-
-- [ ] すべてのテストがパス
-- [ ] ドキュメント更新（README, SPEC, CHANGELOG）
-- [ ] パフォーマンス要件を満たす
-- [ ] 主要OSでの動作確認（macOS, Linux, Windows）
-
----
-
-## 参考資料
-
-### 公式ドキュメント
-
-- [Tree-sitter Documentation](https://tree-sitter.github.io/tree-sitter/)
-- [SQLite FTS5](https://www.sqlite.org/fts5.html)
-- [SQLite BLOB](https://www.sqlite.org/datatype3.html)
-- [Ollama Documentation](https://ollama.ai/)
-
-### Go関連
-
-- [Effective Go](https://go.dev/doc/effective_go)
-- [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments)
-
----
-
-## 質問・議論
-
-開発中に疑問が生じた場合:
-1. まずこのドキュメントとSPEC.mdを参照
-2. Issueで議論
-3. 必要に応じてこのドキュメントを更新
-
-**更新履歴:**
-- 2026-03-08: 初版作成
+- ❌ Add unnecessary dependencies
+- ❌ Require complex setup
+- ❌ Depend on external services
+- ❌ Over-engineer or premature abstraction (YAGNI)
+- ❌ Sacrifice performance targets
