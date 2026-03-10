@@ -1,7 +1,7 @@
 # Makefile for Cogi - Code Intelligence Engine
 # All commands use -tags fts5 for SQLite FTS5 support
 
-.PHONY: build install clean test test-coverage release run fmt lint tidy help all
+.PHONY: build install clean test test-coverage release run fmt lint tidy check help all
 
 # Default target
 all: build
@@ -88,6 +88,10 @@ tidy:
 	go mod tidy
 	@echo "✓ Tidy complete"
 
+# Run all checks (format, lint, tidy)
+check: fmt lint tidy
+	@echo "✓ All checks complete"
+
 # Show help
 help:
 	@echo "Cogi Makefile - Code Intelligence Engine"
@@ -111,6 +115,7 @@ help:
 	@echo "  fmt           - Format code with go fmt"
 	@echo "  lint          - Run golangci-lint"
 	@echo "  tidy          - Tidy go.mod dependencies"
+	@echo "  check         - Run fmt, lint, and tidy"
 	@echo ""
 	@echo "Cleanup targets:"
 	@echo "  clean         - Remove build artifacts"

@@ -49,7 +49,7 @@ func (p *Parser) findRustImports(cursor *sitter.TreeCursor, sourceCode []byte, r
 // parseRustUseDeclaration parses a Rust use declaration
 func (p *Parser) parseRustUseDeclaration(node *sitter.Node, sourceCode []byte, result *ParseResult) {
 	var importPath string
-	var importType string = "named"
+	var importType = "named"
 	var importedSymbols []string
 
 	// Get the use clause
@@ -429,7 +429,7 @@ func (p *Parser) parseRustCallExpression(node *sitter.Node, sourceCode []byte, c
 
 	funcNode := node.Child(0)
 	var calleeName string
-	var callType string = "direct"
+	var callType string
 
 	switch funcNode.Type() {
 	case "identifier":

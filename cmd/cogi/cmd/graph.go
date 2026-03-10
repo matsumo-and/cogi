@@ -50,26 +50,27 @@ which functions/methods are called by the given symbol (callees).`,
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Create graph manager
 		gm := graph.New(database)
 
 		// Get call graph based on direction
 		var nodes []*graph.CallNode
-		if callDirection == "caller" || callDirection == "callers" {
+		switch callDirection {
+		case "caller", "callers":
 			nodes, err = gm.GetCallersTree(symbolName, callDepth)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error getting callers: %v\n", err)
 				os.Exit(1)
 			}
-		} else if callDirection == "callee" || callDirection == "callees" {
+		case "callee", "callees":
 			nodes, err = gm.GetCalleesTree(symbolName, callDepth)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error getting callees: %v\n", err)
 				os.Exit(1)
 			}
-		} else {
+		default:
 			fmt.Fprintf(os.Stderr, "Invalid direction: %s. Use 'caller' or 'callee'\n", callDirection)
 			os.Exit(1)
 		}
@@ -110,26 +111,27 @@ which files are imported by the given file (dependencies).`,
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Create graph manager
 		gm := graph.New(database)
 
 		// Get import graph based on direction
 		var nodes []*graph.ImportNode
-		if importDirection == "importer" || importDirection == "importers" {
+		switch importDirection {
+		case "importer", "importers":
 			nodes, err = gm.GetImporters(filePath, importDepth)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error getting importers: %v\n", err)
 				os.Exit(1)
 			}
-		} else if importDirection == "dependency" || importDirection == "dependencies" {
+		case "dependency", "dependencies":
 			nodes, err = gm.GetImportDependencies(filePath, importDepth)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error getting dependencies: %v\n", err)
 				os.Exit(1)
 			}
-		} else {
+		default:
 			fmt.Fprintf(os.Stderr, "Invalid direction: %s. Use 'importer' or 'dependency'\n", importDirection)
 			os.Exit(1)
 		}

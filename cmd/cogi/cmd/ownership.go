@@ -37,7 +37,7 @@ This command analyzes git history to determine who owns which parts of the code.
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Handle different query modes
 		if ownershipAuthor != "" {
@@ -48,7 +48,7 @@ This command analyzes git history to determine who owns which parts of the code.
 			showFileOwnership(database, ownershipFile, ownershipLine)
 		} else {
 			fmt.Println("Please specify --file, --author, or --top")
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		}
 	},

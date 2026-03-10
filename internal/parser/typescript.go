@@ -49,7 +49,7 @@ func (p *Parser) findTSImports(cursor *sitter.TreeCursor, sourceCode []byte, res
 // parseTSImportStatement parses a TypeScript/JavaScript import statement
 func (p *Parser) parseTSImportStatement(node *sitter.Node, sourceCode []byte, result *ParseResult) {
 	var importPath string
-	var importType string = "named"
+	var importType = "named"
 	var importedSymbols []string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -431,7 +431,7 @@ func (p *Parser) parseTSCallExpression(node *sitter.Node, sourceCode []byte, cal
 
 	funcNode := node.Child(0)
 	var calleeName string
-	var callType string = "direct"
+	var callType string
 
 	switch funcNode.Type() {
 	case "identifier":

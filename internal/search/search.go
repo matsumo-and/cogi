@@ -115,7 +115,7 @@ func (s *KeywordSearcher) Search(ctx context.Context, opts KeywordSearchOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute search query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanKeywordResults(rows)
 }
@@ -209,7 +209,7 @@ func (s *SemanticSearcher) Search(ctx context.Context, opts SemanticSearchOption
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch symbols: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Scan all matching symbols
 	symbols, err := scanResults(rows)

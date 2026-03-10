@@ -36,13 +36,13 @@ func Open(dbPath string) (*DB, error) {
 
 	// Initialize schema
 	if err := db.initSchema(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
 	// Optimize SQLite settings
 	if err := db.optimize(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 

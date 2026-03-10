@@ -67,7 +67,7 @@ func (p *Parser) parseGoImportDeclaration(node *sitter.Node, sourceCode []byte, 
 // parseGoImportSpec parses a single import spec
 func (p *Parser) parseGoImportSpec(node *sitter.Node, sourceCode []byte, result *ParseResult) {
 	var importPath string
-	var importType string = "default"
+	var importType = "default"
 	var importedSymbols []string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -370,7 +370,7 @@ func (p *Parser) parseGoCallExpression(node *sitter.Node, sourceCode []byte, cal
 
 	funcNode := node.Child(0)
 	var calleeName string
-	var callType string = "direct"
+	var callType string
 
 	switch funcNode.Type() {
 	case "identifier":

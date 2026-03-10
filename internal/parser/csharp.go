@@ -49,7 +49,7 @@ func (p *Parser) findCSharpImports(cursor *sitter.TreeCursor, sourceCode []byte,
 // parseCSharpUsingDirective parses a C# using directive
 func (p *Parser) parseCSharpUsingDirective(node *sitter.Node, sourceCode []byte, result *ParseResult) {
 	var importPath string
-	var importType string = "named"
+	var importType = "named"
 	var importedSymbols []string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -420,7 +420,7 @@ func (p *Parser) parseCSharpInvocationExpression(node *sitter.Node, sourceCode [
 
 	funcNode := node.Child(0)
 	var calleeName string
-	var callType string = "direct"
+	var callType string
 
 	switch funcNode.Type() {
 	case "identifier":

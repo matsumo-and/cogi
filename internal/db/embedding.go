@@ -142,7 +142,7 @@ func (db *DB) GetEmbeddingsBySymbolIDs(symbolIDs []int64) ([]Embedding, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query embeddings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	embeddings := []Embedding{}
 	for rows.Next() {
@@ -224,7 +224,7 @@ func (db *DB) GetAllEmbeddings(granularity string) ([]Embedding, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query embeddings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	embeddings := []Embedding{}
 	for rows.Next() {

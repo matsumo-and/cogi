@@ -37,7 +37,7 @@ including symbol index, call graph, import graph, and vector embeddings.`,
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Create indexer
 		idx := indexer.New(database, cfg)

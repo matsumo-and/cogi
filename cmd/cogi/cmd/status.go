@@ -29,7 +29,7 @@ and overall system health.`,
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		fmt.Print("\n━━━ Cogi Status ━━━\n\n")
 

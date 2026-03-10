@@ -137,7 +137,7 @@ func (db *DB) ListRepositories() ([]*Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list repositories: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var repos []*Repository
 	for rows.Next() {

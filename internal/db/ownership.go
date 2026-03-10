@@ -49,7 +49,7 @@ func (db *DB) GetOwnershipByFile(fileID int64) ([]*Ownership, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query ownership: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanOwnership(rows)
 }
@@ -66,7 +66,7 @@ func (db *DB) GetOwnershipByAuthor(authorName string) ([]*Ownership, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query ownership: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanOwnership(rows)
 }
@@ -123,7 +123,7 @@ func (db *DB) GetTopAuthors(limit int) ([]AuthorStats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query authors: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var authors []AuthorStats
 	for rows.Next() {

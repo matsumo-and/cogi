@@ -50,7 +50,7 @@ var searchSymbolCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Search symbols
 		var symbols []*db.Symbol
@@ -119,7 +119,7 @@ var searchKeywordCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Perform full-text search
 		symbols, err := database.FullTextSearch(query, 20)
@@ -204,7 +204,7 @@ var searchHybridCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Initialize Ollama embedding client
 		embedClient := embedding.NewOllamaClient(
@@ -282,7 +282,7 @@ var searchSemanticCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Initialize Ollama embedding client
 		embedClient := embedding.NewOllamaClient(

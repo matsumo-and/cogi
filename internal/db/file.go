@@ -3,6 +3,7 @@ package db
 import (
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -126,7 +127,7 @@ func (db *DB) ListFilesByRepository(repositoryID int64) ([]*File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanFiles(rows)
 }
@@ -141,7 +142,7 @@ func (db *DB) ListFiles() ([]*File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanFiles(rows)
 }
@@ -173,7 +174,11 @@ func ComputeFileHash(filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close file: %w", cerr))
+		}
+	}()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {

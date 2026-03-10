@@ -49,7 +49,7 @@ func (p *Parser) findJavaImports(cursor *sitter.TreeCursor, sourceCode []byte, r
 // parseJavaImportDeclaration parses a Java import declaration
 func (p *Parser) parseJavaImportDeclaration(node *sitter.Node, sourceCode []byte, result *ParseResult) {
 	var importPath string
-	var importType string = "named"
+	var importType = "named"
 	var importedSymbols []string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -339,7 +339,7 @@ func (p *Parser) walkJavaCallSites(cursor *sitter.TreeCursor, sourceCode []byte,
 // parseJavaMethodInvocation parses a method invocation
 func (p *Parser) parseJavaMethodInvocation(node *sitter.Node, sourceCode []byte, callerName string, result *ParseResult) {
 	var calleeName string
-	var callType string = "direct"
+	var callType = "direct"
 
 	nameNode := findChildByType(node, "identifier")
 	if nameNode != nil {

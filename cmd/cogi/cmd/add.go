@@ -54,7 +54,7 @@ The repository will be scanned and indexed for code intelligence features.`,
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Check if repository already exists
 		exists, err := database.RepositoryExists(name, absPath)

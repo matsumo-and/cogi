@@ -88,14 +88,15 @@ func (p *Parser) parsePythonImportStatement(node *sitter.Node, sourceCode []byte
 // parsePythonImportFromStatement parses: from module import X [, Y] [as Z]
 func (p *Parser) parsePythonImportFromStatement(node *sitter.Node, sourceCode []byte, result *ParseResult) {
 	var importPath string
-	var importType string = "named"
+	var importType = "named"
 	var importedSymbols []string
 
 	for i := 0; i < int(node.ChildCount()); i++ {
 		child := node.Child(i)
 		childType := child.Type()
 
-		if childType == "dotted_name" {
+		switch childType {
+		case "dotted_name":
 			// Module path (appears first before "import" keyword)
 			if importPath == "" {
 				importPath = getNodeText(child, sourceCode)
@@ -103,19 +104,19 @@ func (p *Parser) parsePythonImportFromStatement(node *sitter.Node, sourceCode []
 				// Named import after "import" keyword
 				importedSymbols = append(importedSymbols, getNodeText(child, sourceCode))
 			}
-		} else if childType == "relative_import" {
+		case "relative_import":
 			// Relative import: from . import X or from .. import Y
 			importPath = getNodeText(child, sourceCode)
-		} else if childType == "wildcard_import" {
+		case "wildcard_import":
 			// from module import *
 			importType = "wildcard"
 			importedSymbols = append(importedSymbols, "*")
-		} else if childType == "identifier" {
+		case "identifier":
 			// Named import
 			if importPath != "" { // Only if we already have the module path
 				importedSymbols = append(importedSymbols, getNodeText(child, sourceCode))
 			}
-		} else if childType == "aliased_import" {
+		case "aliased_import":
 			// from module import X as Y
 			nameNode := child.Child(0)
 			if nameNode != nil {
@@ -316,7 +317,7 @@ func (p *Parser) parsePythonCallExpression(node *sitter.Node, sourceCode []byte,
 
 	funcNode := node.Child(0)
 	var calleeName string
-	var callType string = "direct"
+	var callType string
 
 	switch funcNode.Type() {
 	case "identifier":

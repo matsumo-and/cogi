@@ -1,0 +1,29 @@
+# golangci-lint configuration for Cogi
+# Run with: golangci-lint run
+
+version: "2"
+
+run:
+  timeout: 3m
+  build-tags:
+    - fts5
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+  exclusions:
+
+    rules:
+      # Exclude some linters from running on tests files.
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec

@@ -244,20 +244,20 @@ func FormatCallTree(nodes []*CallNode, direction string) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Call Graph (%s):\n", direction))
+	fmt.Fprintf(&sb, "Call Graph (%s):\n", direction)
 	sb.WriteString(strings.Repeat("-", 80))
 	sb.WriteString("\n\n")
 
 	for _, node := range nodes {
 		indent := strings.Repeat("  ", node.Depth)
-		sb.WriteString(fmt.Sprintf("%s%s %s.%s (%s:%d)\n",
+		fmt.Fprintf(&sb, "%s%s %s.%s (%s:%d)\n",
 			indent,
 			getCallTypeSymbol(node.CallType),
 			node.Symbol.Scope,
 			node.Symbol.Name,
 			"file",
 			node.Symbol.StartLine,
-		))
+		)
 	}
 
 	return sb.String()
@@ -270,7 +270,7 @@ func FormatImportTree(nodes []*ImportNode, direction string) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Import Graph (%s):\n", direction))
+	fmt.Fprintf(&sb, "Import Graph (%s):\n", direction)
 	sb.WriteString(strings.Repeat("-", 80))
 	sb.WriteString("\n\n")
 
@@ -281,14 +281,14 @@ func FormatImportTree(nodes []*ImportNode, direction string) string {
 			symbolsStr = fmt.Sprintf(" { %s }", strings.Join(node.Symbols, ", "))
 		}
 
-		sb.WriteString(fmt.Sprintf("%s%s %s%s (%s:%d)\n",
+		fmt.Fprintf(&sb, "%s%s %s%s (%s:%d)\n",
 			indent,
 			getImportTypeSymbol(node.ImportType),
 			node.ImportPath,
 			symbolsStr,
 			node.FilePath,
 			node.LineNumber,
-		))
+		)
 	}
 
 	return sb.String()

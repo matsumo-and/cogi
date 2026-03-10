@@ -246,7 +246,7 @@ func (e *Exporter) exportSymbolsFiltered(repositoryID *int64) ([]SymbolExport, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var symbols []SymbolExport
 	for rows.Next() {
@@ -299,7 +299,7 @@ func (e *Exporter) exportCallGraph() ([]CallGraphExport, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var callGraph []CallGraphExport
 	for rows.Next() {
@@ -337,7 +337,7 @@ func (e *Exporter) exportImportGraph() ([]ImportGraphExport, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var importGraph []ImportGraphExport
 	for rows.Next() {
@@ -385,7 +385,7 @@ func (e *Exporter) exportOwnership() ([]OwnershipExport, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ownership []OwnershipExport
 	for rows.Next() {

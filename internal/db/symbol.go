@@ -97,7 +97,7 @@ func (db *DB) ListSymbolsByFile(fileID int64) ([]*Symbol, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list symbols: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanSymbols(rows)
 }
@@ -114,7 +114,7 @@ func (db *DB) SearchSymbolsByName(name string) ([]*Symbol, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to search symbols: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanSymbols(rows)
 }
@@ -131,7 +131,7 @@ func (db *DB) SearchSymbolsByKind(kind string) ([]*Symbol, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to search symbols: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanSymbols(rows)
 }
@@ -151,7 +151,7 @@ func (db *DB) FullTextSearch(query string, limit int) ([]*Symbol, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform full-text search: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanSymbols(rows)
 }
@@ -241,7 +241,7 @@ func (db *DB) GetSymbolsByRepository(repositoryID int64) ([]*Symbol, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get symbols by repository: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanSymbols(rows)
 }

@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -36,12 +37,16 @@ func (db *DB) CreateImportGraph(ig *ImportGraph) (int64, error) {
 }
 
 // BatchCreateImportGraph creates multiple import graph records in a single transaction
-func (db *DB) BatchCreateImportGraph(importGraphs []*ImportGraph) error {
+func (db *DB) BatchCreateImportGraph(importGraphs []*ImportGraph) (err error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to rollback: %w", rerr))
+		}
+	}()
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO import_graph (
@@ -51,7 +56,11 @@ func (db *DB) BatchCreateImportGraph(importGraphs []*ImportGraph) error {
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
-	defer stmt.Close()
+	defer func() {
+		if cerr := stmt.Close(); cerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close statement: %w", cerr))
+		}
+	}()
 
 	for _, ig := range importGraphs {
 		_, err = stmt.Exec(ig.FileID, ig.ImportPath, ig.ImportType,
@@ -79,7 +88,7 @@ func (db *DB) GetImportGraphByFile(fileID int64) ([]*ImportGraph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get import graph by file: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanImportGraphs(rows)
 }
@@ -95,7 +104,7 @@ func (db *DB) GetImportGraphByPath(importPath string) ([]*ImportGraph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get import graph by path: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanImportGraphs(rows)
 }
@@ -111,7 +120,7 @@ func (db *DB) GetImportGraphByPathPattern(pattern string) ([]*ImportGraph, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get import graph by pattern: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanImportGraphs(rows)
 }
@@ -159,7 +168,7 @@ func (db *DB) GetImportersRecursive(fileID int64, depth int) ([]*ImportGraph, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to get importers recursively: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanImportGraphs(rows)
 }
@@ -199,7 +208,7 @@ func (db *DB) GetDependenciesRecursive(fileID int64, depth int) ([]*ImportGraph,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dependencies recursively: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanImportGraphs(rows)
 }
@@ -243,7 +252,7 @@ func (db *DB) DetectCircularDependencies(fileID int64) ([][]*ImportGraph, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect circular dependencies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Parse results - this is a simplified version
 	// In practice, we'd need to reconstruct the actual cycles

@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -39,12 +40,16 @@ func (db *DB) CreateCallGraph(cg *CallGraph) (int64, error) {
 }
 
 // BatchCreateCallGraph creates multiple call graph records in a single transaction
-func (db *DB) BatchCreateCallGraph(callGraphs []*CallGraph) error {
+func (db *DB) BatchCreateCallGraph(callGraphs []*CallGraph) (err error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to rollback: %w", rerr))
+		}
+	}()
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO call_graph (
@@ -55,7 +60,11 @@ func (db *DB) BatchCreateCallGraph(callGraphs []*CallGraph) error {
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
-	defer stmt.Close()
+	defer func() {
+		if cerr := stmt.Close(); cerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close statement: %w", cerr))
+		}
+	}()
 
 	for _, cg := range callGraphs {
 		_, err = stmt.Exec(cg.CallerSymbolID, cg.CalleeSymbolID, cg.CalleeName,
@@ -73,7 +82,7 @@ func (db *DB) BatchCreateCallGraph(callGraphs []*CallGraph) error {
 }
 
 // GetCallGraphByCaller retrieves all call graph entries for a caller symbol
-func (db *DB) GetCallGraphByCaller(callerSymbolID int64) ([]*CallGraph, error) {
+func (db *DB) GetCallGraphByCaller(callerSymbolID int64) (result []*CallGraph, err error) {
 	rows, err := db.Query(`
 		SELECT id, caller_symbol_id, callee_symbol_id, callee_name,
 		       call_line, call_column, call_type
@@ -84,13 +93,17 @@ func (db *DB) GetCallGraphByCaller(callerSymbolID int64) ([]*CallGraph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get call graph by caller: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close rows: %w", cerr))
+		}
+	}()
 
 	return scanCallGraphs(rows)
 }
 
 // GetCallGraphByCallee retrieves all call graph entries for a callee symbol
-func (db *DB) GetCallGraphByCallee(calleeSymbolID int64) ([]*CallGraph, error) {
+func (db *DB) GetCallGraphByCallee(calleeSymbolID int64) (result []*CallGraph, err error) {
 	rows, err := db.Query(`
 		SELECT id, caller_symbol_id, callee_symbol_id, callee_name,
 		       call_line, call_column, call_type
@@ -101,13 +114,17 @@ func (db *DB) GetCallGraphByCallee(calleeSymbolID int64) ([]*CallGraph, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get call graph by callee: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close rows: %w", cerr))
+		}
+	}()
 
 	return scanCallGraphs(rows)
 }
 
 // GetCallGraphByCalleeName retrieves all call graph entries by callee name (for external functions)
-func (db *DB) GetCallGraphByCalleeName(calleeName string) ([]*CallGraph, error) {
+func (db *DB) GetCallGraphByCalleeName(calleeName string) (result []*CallGraph, err error) {
 	rows, err := db.Query(`
 		SELECT id, caller_symbol_id, callee_symbol_id, callee_name,
 		       call_line, call_column, call_type
@@ -118,13 +135,17 @@ func (db *DB) GetCallGraphByCalleeName(calleeName string) ([]*CallGraph, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get call graph by callee name: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close rows: %w", cerr))
+		}
+	}()
 
 	return scanCallGraphs(rows)
 }
 
 // GetCallersRecursive retrieves all callers of a symbol recursively up to specified depth
-func (db *DB) GetCallersRecursive(symbolID int64, depth int) ([]*CallGraph, error) {
+func (db *DB) GetCallersRecursive(symbolID int64, depth int) (result []*CallGraph, err error) {
 	if depth <= 0 {
 		return nil, nil
 	}
@@ -157,13 +178,17 @@ func (db *DB) GetCallersRecursive(symbolID int64, depth int) ([]*CallGraph, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to get callers recursively: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close rows: %w", cerr))
+		}
+	}()
 
 	return scanCallGraphs(rows)
 }
 
 // GetCalleesRecursive retrieves all callees of a symbol recursively up to specified depth
-func (db *DB) GetCalleesRecursive(symbolID int64, depth int) ([]*CallGraph, error) {
+func (db *DB) GetCalleesRecursive(symbolID int64, depth int) (result []*CallGraph, err error) {
 	if depth <= 0 {
 		return nil, nil
 	}
@@ -196,7 +221,11 @@ func (db *DB) GetCalleesRecursive(symbolID int64, depth int) ([]*CallGraph, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to get callees recursively: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close rows: %w", cerr))
+		}
+	}()
 
 	return scanCallGraphs(rows)
 }
