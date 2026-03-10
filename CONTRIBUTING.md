@@ -85,12 +85,15 @@ We use the following tools for code quality:
 
 ```bash
 # Format code
-gofmt -w .
+make fmt
 
-# Lint code
-golangci-lint run
+# Lint code (requires golangci-lint)
+make lint
 
-# Run all checks
+# Tidy dependencies
+make tidy
+
+# Run all checks (fmt + lint + tidy)
 make check
 ```
 
@@ -267,11 +270,10 @@ go test -tags fts5 -cover ./...
 
 ### Before Submitting
 
-1. Ensure all tests pass: `make test`
-2. Format code: `gofmt -w .`
-3. Lint code: `golangci-lint run`
-4. Update documentation if needed
-5. Add tests for new functionality
+1. Run all checks: `make check` (runs fmt, lint, and tidy)
+2. Ensure all tests pass: `make test`
+3. Update documentation if needed
+4. Add tests for new functionality
 
 ### Commit Messages
 
@@ -331,9 +333,8 @@ Brief description of changes
 How was this tested?
 
 ## Checklist
-- [ ] Tests pass locally
-- [ ] Code is formatted (gofmt)
-- [ ] Linting passes (golangci-lint)
+- [ ] All checks pass (`make check`)
+- [ ] Tests pass locally (`make test`)
 - [ ] Documentation updated
 - [ ] CHANGELOG.md updated (if applicable)
 ```
