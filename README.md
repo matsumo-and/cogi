@@ -33,6 +33,26 @@ Unknown file extensions are automatically processed with the text parser.
 
 ### Installation
 
+#### Option 1: Install from GitHub Releases (Recommended)
+
+```bash
+# macOS (Apple Silicon)
+curl -L -o cogi https://github.com/matsumo-and/cogi/releases/latest/download/cogi-darwin-arm64
+chmod +x cogi
+sudo mv cogi /usr/local/bin/
+
+# Linux (x86_64)
+curl -L -o cogi https://github.com/matsumo-and/cogi/releases/latest/download/cogi-linux-amd64
+chmod +x cogi
+sudo mv cogi /usr/local/bin/
+
+# Windows (PowerShell)
+curl -L -o cogi.exe https://github.com/matsumo-and/cogi/releases/latest/download/cogi-windows-amd64.exe
+# Move to a directory in your PATH, e.g., C:\Program Files\cogi\
+```
+
+#### Option 2: Build from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/matsumo-and/cogi.git
