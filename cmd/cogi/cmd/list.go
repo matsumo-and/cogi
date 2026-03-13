@@ -47,18 +47,21 @@ Shows repository name, path, and last indexed time.`,
 
 		// Create table writer
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tPATH\tLAST INDEXED")
-		fmt.Fprintln(w, "────\t────\t────────────")
+		_, _ = fmt.Fprintln(w, "NAME\tPATH\tLAST INDEXED")
+		_, _ = fmt.Fprintln(w, "────\t────\t────────────")
 
 		for _, repo := range repos {
 			lastIndexed := "Never"
 			if repo.LastIndexedAt != nil {
 				lastIndexed = repo.LastIndexedAt.Format("2006-01-02 15:04:05")
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\n", repo.Name, repo.Path, lastIndexed)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", repo.Name, repo.Path, lastIndexed)
 		}
 
-		w.Flush()
+		if w.Flush() != nil {
+			fmt.Fprintf(os.Stderr, "Error flushing writer: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 

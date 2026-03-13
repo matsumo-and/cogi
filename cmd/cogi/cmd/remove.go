@@ -48,7 +48,7 @@ embeddings, and ownership information.`,
 		if !removeForce {
 			fmt.Printf("Are you sure you want to remove repository '%s'? (y/N): ", repoName)
 			var response string
-			fmt.Scanln(&response)
+			_, _ = fmt.Scanln(&response)
 			if response != "y" && response != "Y" {
 				fmt.Println("Cancelled.")
 				return
