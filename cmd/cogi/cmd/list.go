@@ -58,7 +58,7 @@ Shows repository name, path, and last indexed time.`,
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", repo.Name, repo.Path, lastIndexed)
 		}
 
-		if w.Flush() != nil {
+		if err := w.Flush(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error flushing writer: %v\n", err)
 			os.Exit(1)
 		}
