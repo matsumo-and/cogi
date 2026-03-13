@@ -178,9 +178,9 @@ database:
 
 embedding:
   provider: ollama
-  model: nomic-embed-text
+  model: mxbai-embed-large
   endpoint: http://localhost:11434
-  dimension: 768
+  dimension: 1024
   batch_size: 32
 
 indexing:
@@ -195,6 +195,49 @@ indexing:
 performance:
   max_workers: 8
 ```
+
+## Embedding Models
+
+Cogi uses [Ollama](https://ollama.ai/) for generating code embeddings for semantic search. The choice of embedding model significantly impacts search accuracy.
+
+### Recommended Models
+
+| Model | Dimensions | Best For | Performance |
+|-------|-----------|----------|-------------|
+| **mxbai-embed-large** (default) | 1024 | Best accuracy for code search | Slower, higher quality |
+| nomic-embed-text | 768 | Balanced performance | Faster, good quality |
+| all-minilm | 384 | Fast indexing | Fastest, lower quality |
+
+### Setup
+
+1. Install Ollama from [ollama.ai](https://ollama.ai/)
+
+2. Pull your preferred embedding model:
+```bash
+# Recommended (default)
+ollama pull mxbai-embed-large
+
+# Alternative: Faster but less accurate
+ollama pull nomic-embed-text
+```
+
+3. Start Ollama server:
+```bash
+ollama serve
+```
+
+4. Configure in `~/.cogi/config.yaml` (optional):
+```yaml
+embedding:
+  model: mxbai-embed-large  # or nomic-embed-text
+  dimension: 1024           # 768 for nomic-embed-text
+```
+
+### Changing Models
+
+When switching embedding models with different dimensions, Cogi will automatically detect the mismatch and regenerate all embeddings during the next `cogi index` run.
+
+**Note**: This regeneration may take several minutes depending on your codebase size.
 
 ## Performance
 

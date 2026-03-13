@@ -24,9 +24,7 @@ embedding:
   provider: "ollama"
 
   # 使用する埋め込みモデル
-  # 推奨: nomic-embed-text (768次元)
-  # その他: mxbai-embed-large, all-minilm など
-  model: "nomic-embed-text"
+  model: "mxbai-embed-large"
 
   # Ollamaエンドポイント
   endpoint: "http://localhost:11434"
@@ -35,7 +33,7 @@ embedding:
   # モデルに応じて設定してください
   # nomic-embed-text: 768
   # mxbai-embed-large: 1024
-  dimension: 768
+  dimension: 1024
 
   # バッチサイズ
   # 埋め込み生成時の一度に処理する数

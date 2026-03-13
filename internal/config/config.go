@@ -114,9 +114,9 @@ func setDefaults(v *viper.Viper) {
 
 	// Embedding defaults
 	v.SetDefault("embedding.provider", "ollama")
-	v.SetDefault("embedding.model", "nomic-embed-text")
+	v.SetDefault("embedding.model", "mxbai-embed-large")
 	v.SetDefault("embedding.endpoint", "http://localhost:11434")
-	v.SetDefault("embedding.dimension", 768)
+	v.SetDefault("embedding.dimension", 1024)
 	v.SetDefault("embedding.batch_size", 32)
 
 	// Indexing defaults

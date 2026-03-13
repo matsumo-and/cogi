@@ -468,6 +468,28 @@ func (idx *Indexer) GetStats(repoID int64) (*IndexingStats, error) {
 
 // generateEmbeddings generates embeddings for all symbols in a repository
 func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error {
+	// Check for dimension compatibility with existing embeddings
+	existingEmbeddings, err := idx.db.GetAllEmbeddings("")
+	if err != nil {
+		return fmt.Errorf("failed to get existing embeddings: %w", err)
+	}
+
+	if len(existingEmbeddings) > 0 {
+		// Check if any embedding has different dimension
+		expectedDim := idx.config.Embedding.Dimension
+		for _, emb := range existingEmbeddings {
+			if emb.Dimension != expectedDim {
+				fmt.Printf("\n⚠️  WARNING: Dimension mismatch detected!\n")
+				fmt.Printf("   Existing embeddings: %d dimensions\n", emb.Dimension)
+				fmt.Printf("   Current model: %d dimensions\n", expectedDim)
+				fmt.Printf("   Model: %s\n\n", idx.config.Embedding.Model)
+				fmt.Printf("   Existing embeddings will be automatically regenerated with new dimensions.\n")
+				fmt.Printf("   This may take some time depending on the codebase size.\n\n")
+				break
+			}
+		}
+	}
+
 	// Get all symbols for this repository
 	symbols, err := idx.db.GetSymbolsByRepository(repoID)
 	if err != nil {
@@ -485,6 +507,25 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 	fileSymbols := make(map[int64][]*db.Symbol)
 	for _, sym := range symbols {
 		fileSymbols[sym.FileID] = append(fileSymbols[sym.FileID], sym)
+	}
+
+	// Pre-fetch file information and imports for all files
+	fileInfoMap := make(map[int64]*db.File)
+	fileImportsMap := make(map[int64][]*db.ImportGraph)
+	for fileID := range fileSymbols {
+		file, err := idx.db.GetFile(fileID)
+		if err != nil {
+			fmt.Printf("Warning: failed to get file %d: %v\n", fileID, err)
+			continue
+		}
+		fileInfoMap[fileID] = file
+
+		imports, err := idx.db.GetImportGraphByFile(fileID)
+		if err != nil {
+			fmt.Printf("Warning: failed to get imports for file %d: %v\n", fileID, err)
+			imports = []*db.ImportGraph{} // Use empty slice on error
+		}
+		fileImportsMap[fileID] = imports
 	}
 
 	// Prepare texts for embedding generation
@@ -519,9 +560,20 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 	}
 
 	for _, sym := range symbols {
+		// Get file information for this symbol
+		fileInfo := fileInfoMap[sym.FileID]
+		if fileInfo == nil {
+			continue // Skip if file info not available
+		}
+		filePath := fileInfo.Path
+		imports := fileImportsMap[sym.FileID]
+		if imports == nil {
+			imports = []*db.ImportGraph{}
+		}
+
 		// Generate class-level embedding for classes/structs/interfaces
 		if sym.Kind == "class" || sym.Kind == "struct" || sym.Kind == "interface" {
-			classText := buildClassLevelText(sym)
+			classText := buildClassLevelText(sym, filePath, imports)
 			contentHash := computeHash(classText)
 
 			// Check if embedding already exists
@@ -541,7 +593,14 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 
 		// Generate function-level embedding for functions/methods
 		if sym.Kind == "function" || sym.Kind == "method" {
-			functionText := buildFunctionLevelText(sym)
+			// Get call graph for this function
+			callees, err := idx.db.GetCallGraphByCaller(sym.ID)
+			if err != nil {
+				fmt.Printf("Warning: failed to get callees for symbol %d: %v\n", sym.ID, err)
+				callees = []*db.CallGraph{} // Use empty slice on error
+			}
+
+			functionText := buildFunctionLevelText(sym, filePath, imports, callees)
 			contentHash := computeHash(functionText)
 
 			// Check if embedding already exists
@@ -732,8 +791,29 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 }
 
 // buildClassLevelText creates text representation for class-level embedding
-func buildClassLevelText(sym *db.Symbol) string {
+// Enhanced with file path and imports for better context
+func buildClassLevelText(sym *db.Symbol, filePath string, imports []*db.ImportGraph) string {
 	var parts []string
+
+	// Add file path
+	if filePath != "" {
+		parts = append(parts, fmt.Sprintf("File: %s", filePath))
+	}
+
+	// Add imports
+	if len(imports) > 0 {
+		importPaths := make([]string, 0, len(imports))
+		seen := make(map[string]bool)
+		for _, imp := range imports {
+			if !seen[imp.ImportPath] {
+				importPaths = append(importPaths, imp.ImportPath)
+				seen[imp.ImportPath] = true
+			}
+		}
+		if len(importPaths) > 0 {
+			parts = append(parts, fmt.Sprintf("Imports: %s", strings.Join(importPaths, ", ")))
+		}
+	}
 
 	// Add docstring if available
 	if sym.Docstring != "" {
@@ -760,8 +840,29 @@ func buildClassLevelText(sym *db.Symbol) string {
 }
 
 // buildFunctionLevelText creates text representation for function-level embedding
-func buildFunctionLevelText(sym *db.Symbol) string {
+// Enhanced with file path, imports, and call graph for better context
+func buildFunctionLevelText(sym *db.Symbol, filePath string, imports []*db.ImportGraph, callees []*db.CallGraph) string {
 	var parts []string
+
+	// Add file path
+	if filePath != "" {
+		parts = append(parts, fmt.Sprintf("File: %s", filePath))
+	}
+
+	// Add imports
+	if len(imports) > 0 {
+		importPaths := make([]string, 0, len(imports))
+		seen := make(map[string]bool)
+		for _, imp := range imports {
+			if !seen[imp.ImportPath] {
+				importPaths = append(importPaths, imp.ImportPath)
+				seen[imp.ImportPath] = true
+			}
+		}
+		if len(importPaths) > 0 {
+			parts = append(parts, fmt.Sprintf("Imports: %s", strings.Join(importPaths, ", ")))
+		}
+	}
 
 	// Add docstring if available
 	if sym.Docstring != "" {
@@ -773,6 +874,21 @@ func buildFunctionLevelText(sym *db.Symbol) string {
 		parts = append(parts, sym.Signature)
 	} else {
 		parts = append(parts, fmt.Sprintf("%s %s", sym.Kind, sym.Name))
+	}
+
+	// Add call information (functions this symbol calls)
+	if len(callees) > 0 {
+		calleeNames := make([]string, 0, len(callees))
+		seen := make(map[string]bool)
+		for _, callee := range callees {
+			if !seen[callee.CalleeName] {
+				calleeNames = append(calleeNames, callee.CalleeName)
+				seen[callee.CalleeName] = true
+			}
+		}
+		if len(calleeNames) > 0 {
+			parts = append(parts, fmt.Sprintf("Calls: %s", strings.Join(calleeNames, ", ")))
+		}
 	}
 
 	// Add code body
