@@ -425,11 +425,10 @@ func (s *Server) handleListRepositories(arguments map[string]interface{}) (*mcp.
 	repoList := make([]map[string]interface{}, len(repos))
 	for i, repo := range repos {
 		repoList[i] = map[string]interface{}{
-			"id":            repo.ID,
-			"name":          repo.Name,
-			"path":          repo.Path,
-			"last_indexed":  repo.LastIndexedAt,
-			
+			"id":           repo.ID,
+			"name":         repo.Name,
+			"path":         repo.Path,
+			"last_indexed": repo.LastIndexedAt,
 		}
 	}
 
@@ -469,11 +468,11 @@ func (s *Server) handleStatus(arguments map[string]interface{}) (*mcp.CallToolRe
 		}
 
 		repoStats[i] = map[string]interface{}{
-			"name":          repo.Name,
-			"path":          repo.Path,
-			"files":         stats.TotalFiles,
-			"symbols":       stats.TotalSymbols,
-			"last_indexed":  repo.LastIndexedAt,
+			"name":         repo.Name,
+			"path":         repo.Path,
+			"files":        stats.TotalFiles,
+			"symbols":      stats.TotalSymbols,
+			"last_indexed": repo.LastIndexedAt,
 		}
 	}
 
