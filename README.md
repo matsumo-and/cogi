@@ -15,6 +15,7 @@
 - **Fast Indexing**: Index multiple repositories in under 5 minutes
 - **Multi-Language**: Full support for 10+ programming languages
 - **Advanced Search**: Symbol, keyword, and semantic search capabilities
+- **AI Integration**: MCP (Model Context Protocol) support for Claude Desktop, Cursor, and other AI assistants
 - **Code Analysis**: Call graphs, import graphs, and ownership tracking
 - **Incremental Updates**: Efficiently re-index only changed files
 - **Data Export**: Export indexed data in JSON format
@@ -101,13 +102,121 @@ cogi export --output data.json --type all
 - `cogi add` - Add a repository to the index
 - `cogi index` - Build or update the code index
 - `cogi status` - Show status and statistics
+- `cogi list` - List all indexed repositories
+- `cogi remove` - Remove a repository from the index
 - `cogi search symbol` - Search for symbol definitions
 - `cogi search keyword` - Full-text keyword search
 - `cogi search semantic` - Natural language semantic search
+- `cogi search hybrid` - Hybrid search combining keyword and semantic
 - `cogi graph calls` - Visualize function call relationships
 - `cogi graph imports` - Visualize module dependencies
 - `cogi ownership` - Show code ownership information
 - `cogi export` - Export indexed data to JSON
+- `cogi mcp` - Start MCP server for AI integration
+
+## MCP Integration (Model Context Protocol)
+
+Cogi supports [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), enabling AI assistants like Claude to directly interact with your codebase. This allows natural language interactions for code search, analysis, and repository management.
+
+### Starting the MCP Server
+
+```bash
+cogi mcp
+```
+
+The server uses stdio transport and exposes 12 powerful tools for AI assistants.
+
+### Available MCP Tools
+
+#### Search Tools
+- **cogi_search_symbol** - Search for code symbols by name or kind
+- **cogi_search_keyword** - Full-text keyword search using SQLite FTS5
+- **cogi_search_semantic** - Semantic search using vector embeddings
+- **cogi_search_hybrid** - Hybrid search combining keyword and semantic
+
+#### Repository Management
+- **cogi_add_repository** - Add a repository to the index
+- **cogi_remove_repository** - Remove a repository from the index
+- **cogi_list_repositories** - List all indexed repositories
+- **cogi_status** - Get status and statistics
+
+#### Indexing
+- **cogi_index** - Build or update code index
+
+#### Code Analysis
+- **cogi_graph_calls** - Get call graph (callers/callees)
+- **cogi_graph_imports** - Get import graph (dependencies)
+- **cogi_ownership** - Query code ownership based on git blame
+
+### MCP Client Configuration
+
+#### Claude Desktop
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "cogi": {
+      "command": "/usr/local/bin/cogi",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+After updating the config, restart Claude Desktop.
+
+#### Cursor
+
+Add to your Cursor settings (`Settings` > `Features` > `Language Models` > `MCP Servers`):
+
+```json
+{
+  "mcpServers": {
+    "cogi": {
+      "command": "cogi",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+#### Generic MCP Clients
+
+For other MCP-compatible tools, use the standard stdio configuration:
+
+```json
+{
+  "command": "cogi",
+  "args": ["mcp"],
+  "env": {}
+}
+```
+
+### Usage Examples
+
+Once configured, you can interact with Cogi through natural language in your AI assistant:
+
+**Example conversations:**
+- "Add the ~/my-project repository to Cogi"
+- "Search for database connection functions"
+- "Who wrote the authentication module?"
+- "Show me the call graph for the handleRequest function"
+- "What files import the utils package?"
+- "Index all repositories"
+
+The AI assistant will automatically use the appropriate Cogi MCP tools to fulfill your requests.
+
+### Requirements for MCP
+
+- Cogi must be installed and accessible in your PATH
+- For semantic search features: Ollama must be running (`ollama serve`)
+- Repositories must be added and indexed before searching
 
 ## Architecture
 
