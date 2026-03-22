@@ -35,6 +35,46 @@ type HybridSearchParams struct {
 	SemanticWeight float64 `json:"semantic_weight,omitempty"`
 }
 
+// AddRepositoryParams represents input parameters for adding a repository
+type AddRepositoryParams struct {
+	Name string `json:"name,omitempty"`
+	Path string `json:"path"`
+}
+
+// RemoveRepositoryParams represents input parameters for removing a repository
+type RemoveRepositoryParams struct {
+	Name string `json:"name"`
+}
+
+// IndexRepositoryParams represents input parameters for indexing
+type IndexRepositoryParams struct {
+	Repository string `json:"repository,omitempty"`
+	Full       bool   `json:"full,omitempty"`
+}
+
+// GraphCallsParams represents input parameters for call graph
+type GraphCallsParams struct {
+	SymbolName string `json:"symbol_name"`
+	Direction  string `json:"direction"`
+	Depth      int    `json:"depth,omitempty"`
+}
+
+// GraphImportsParams represents input parameters for import graph
+type GraphImportsParams struct {
+	FilePath  string `json:"file_path"`
+	Direction string `json:"direction"`
+	Depth     int    `json:"depth,omitempty"`
+}
+
+// OwnershipParams represents input parameters for ownership queries
+type OwnershipParams struct {
+	Mode   string `json:"mode"`
+	File   string `json:"file,omitempty"`
+	Line   int    `json:"line,omitempty"`
+	Author string `json:"author,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
 // SearchResult represents a search result in MCP response format
 type SearchResult struct {
 	SymbolName  string  `json:"symbol_name"`

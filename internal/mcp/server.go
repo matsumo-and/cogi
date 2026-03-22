@@ -174,6 +174,161 @@ func (s *Server) registerTools() error {
 		},
 	}, s.handleHybridSearch)
 
+	// Tool 5: Add Repository
+	s.mcpServer.AddTool(mcp.Tool{
+		Name:        "cogi_add_repository",
+		Description: "Add a repository to Cogi's index for code analysis",
+		InputSchema: mcp.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "Path to the repository directory",
+				},
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "Custom name for the repository (optional, uses directory name if not specified)",
+				},
+			},
+			Required: []string{"path"},
+		},
+	}, s.handleAddRepository)
+
+	// Tool 6: Remove Repository
+	s.mcpServer.AddTool(mcp.Tool{
+		Name:        "cogi_remove_repository",
+		Description: "Remove a repository from Cogi's index",
+		InputSchema: mcp.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "Name of the repository to remove",
+				},
+			},
+			Required: []string{"name"},
+		},
+	}, s.handleRemoveRepository)
+
+	// Tool 7: List Repositories
+	s.mcpServer.AddTool(mcp.Tool{
+		Name:        "cogi_list_repositories",
+		Description: "List all indexed repositories",
+		InputSchema: mcp.ToolInputSchema{
+			Type:       "object",
+			Properties: map[string]interface{}{},
+		},
+	}, s.handleListRepositories)
+
+	// Tool 8: Status
+	s.mcpServer.AddTool(mcp.Tool{
+		Name:        "cogi_status",
+		Description: "Get status and statistics of all indexed repositories",
+		InputSchema: mcp.ToolInputSchema{
+			Type:       "object",
+			Properties: map[string]interface{}{},
+		},
+	}, s.handleStatus)
+
+	// Tool 9: Index Repository
+	s.mcpServer.AddTool(mcp.Tool{
+		Name:        "cogi_index",
+		Description: "Build or update code index for repositories",
+		InputSchema: mcp.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]interface{}{
+				"repository": map[string]interface{}{
+					"type":        "string",
+					"description": "Name of specific repository to index (optional, indexes all if not specified)",
+				},
+				"full": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Force full reindex instead of incremental (optional, default false)",
+				},
+			},
+		},
+	}, s.handleIndex)
+
+	// Tool 10: Call Graph
+	s.mcpServer.AddTool(mcp.Tool{
+		Name:        "cogi_graph_calls",
+		Description: "Get call graph showing who calls a symbol or what a symbol calls",
+		InputSchema: mcp.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]interface{}{
+				"symbol_name": map[string]interface{}{
+					"type":        "string",
+					"description": "Name of the symbol to analyze",
+				},
+				"direction": map[string]interface{}{
+					"type":        "string",
+					"description": "Direction: 'caller' (who calls this) or 'callee' (what this calls). Default: caller",
+				},
+				"depth": map[string]interface{}{
+					"type":        "number",
+					"description": "Depth of graph traversal (default 3)",
+				},
+			},
+			Required: []string{"symbol_name", "direction"},
+		},
+	}, s.handleGraphCalls)
+
+	// Tool 11: Import Graph
+	s.mcpServer.AddTool(mcp.Tool{
+		Name:        "cogi_graph_imports",
+		Description: "Get import graph showing file dependencies",
+		InputSchema: mcp.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]interface{}{
+				"file_path": map[string]interface{}{
+					"type":        "string",
+					"description": "Path to the file to analyze",
+				},
+				"direction": map[string]interface{}{
+					"type":        "string",
+					"description": "Direction: 'importer' (who imports this file) or 'dependency' (what this file imports). Default: dependency",
+				},
+				"depth": map[string]interface{}{
+					"type":        "number",
+					"description": "Depth of graph traversal (default 3)",
+				},
+			},
+			Required: []string{"file_path", "direction"},
+		},
+	}, s.handleGraphImports)
+
+	// Tool 12: Code Ownership
+	s.mcpServer.AddTool(mcp.Tool{
+		Name:        "cogi_ownership",
+		Description: "Query code ownership information based on git blame",
+		InputSchema: mcp.ToolInputSchema{
+			Type: "object",
+			Properties: map[string]interface{}{
+				"mode": map[string]interface{}{
+					"type":        "string",
+					"description": "Query mode: 'file' (ownership by file), 'author' (files by author), or 'top' (top contributors)",
+				},
+				"file": map[string]interface{}{
+					"type":        "string",
+					"description": "File path (required for mode=file)",
+				},
+				"line": map[string]interface{}{
+					"type":        "number",
+					"description": "Line number (optional, for mode=file)",
+				},
+				"author": map[string]interface{}{
+					"type":        "string",
+					"description": "Author name (required for mode=author)",
+				},
+				"limit": map[string]interface{}{
+					"type":        "number",
+					"description": "Number of results (for mode=top, default 10)",
+				},
+			},
+			Required: []string{"mode"},
+		},
+	}, s.handleOwnership)
+
 	return nil
 }
 

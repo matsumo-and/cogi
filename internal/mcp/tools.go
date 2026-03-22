@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/matsumo_and/cogi/internal/db"
 	"github.com/matsumo_and/cogi/internal/embedding"
+	"github.com/matsumo_and/cogi/internal/graph"
+	"github.com/matsumo_and/cogi/internal/indexer"
 	"github.com/matsumo_and/cogi/internal/search"
 )
 
@@ -303,6 +307,439 @@ func (s *Server) handleHybridSearch(arguments map[string]interface{}) (*mcp.Call
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal results: %v", err)), nil
 	}
+
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleAddRepository handles adding a repository to the index
+func (s *Server) handleAddRepository(arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+	var params AddRepositoryParams
+	paramsJSON, err := json.Marshal(arguments)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal parameters: %v", err)), nil
+	}
+	if err := json.Unmarshal(paramsJSON, &params); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to parse parameters: %v", err)), nil
+	}
+
+	if params.Path == "" {
+		return mcp.NewToolResultError("path parameter is required"), nil
+	}
+
+	// Resolve absolute path
+	absPath, err := filepath.Abs(params.Path)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to resolve path: %v", err)), nil
+	}
+
+	// Check if path exists
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return mcp.NewToolResultError(fmt.Sprintf("path does not exist: %s", absPath)), nil
+	}
+
+	// Use directory name as repository name if not specified
+	name := params.Name
+	if name == "" {
+		name = filepath.Base(absPath)
+	}
+
+	database, err := s.initDatabase()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to open database: %v", err)), nil
+	}
+	defer func() { _ = database.Close() }()
+
+	// Check if repository already exists
+	if exists, _ := database.RepositoryExists(name, absPath); exists {
+		return mcp.NewToolResultError(fmt.Sprintf("repository already indexed: %s", name)), nil
+	}
+
+	// Create repository entry
+	repoID, err := database.CreateRepository(name, absPath)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to add repository: %v", err)), nil
+	}
+
+	resultJSON, _ := json.MarshalIndent(map[string]interface{}{
+		"success":       true,
+		"repository_id": repoID,
+		"name":          name,
+		"path":          absPath,
+		"message":       fmt.Sprintf("Repository '%s' added. Run indexing to build the code index.", name),
+	}, "", "  ")
+
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleRemoveRepository handles removing a repository from the index
+func (s *Server) handleRemoveRepository(arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+	var params RemoveRepositoryParams
+	paramsJSON, err := json.Marshal(arguments)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal parameters: %v", err)), nil
+	}
+	if err := json.Unmarshal(paramsJSON, &params); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to parse parameters: %v", err)), nil
+	}
+
+	if params.Name == "" {
+		return mcp.NewToolResultError("name parameter is required"), nil
+	}
+
+	database, err := s.initDatabase()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to open database: %v", err)), nil
+	}
+	defer func() { _ = database.Close() }()
+
+	repo, err := database.GetRepositoryByName(params.Name)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("repository not found: %s", params.Name)), nil
+	}
+
+	if err := database.DeleteRepository(repo.ID); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to remove repository: %v", err)), nil
+	}
+
+	resultJSON, _ := json.MarshalIndent(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Repository '%s' removed from index", params.Name),
+	}, "", "  ")
+
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleListRepositories handles listing all repositories
+func (s *Server) handleListRepositories(arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+	database, err := s.initDatabase()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to open database: %v", err)), nil
+	}
+	defer func() { _ = database.Close() }()
+
+	repos, err := database.ListRepositories()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to list repositories: %v", err)), nil
+	}
+
+	repoList := make([]map[string]interface{}, len(repos))
+	for i, repo := range repos {
+		repoList[i] = map[string]interface{}{
+			"id":            repo.ID,
+			"name":          repo.Name,
+			"path":          repo.Path,
+			"last_indexed":  repo.LastIndexedAt,
+			
+		}
+	}
+
+	resultJSON, _ := json.MarshalIndent(map[string]interface{}{
+		"repositories": repoList,
+		"count":        len(repos),
+	}, "", "  ")
+
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleStatus handles status query
+func (s *Server) handleStatus(arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+	database, err := s.initDatabase()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to open database: %v", err)), nil
+	}
+	defer func() { _ = database.Close() }()
+
+	repos, err := database.ListRepositories()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to list repositories: %v", err)), nil
+	}
+
+	idx := indexer.New(database, s.config)
+	repoStats := make([]map[string]interface{}, len(repos))
+
+	for i, repo := range repos {
+		stats, err := idx.GetStats(repo.ID)
+		if err != nil {
+			repoStats[i] = map[string]interface{}{
+				"name":  repo.Name,
+				"path":  repo.Path,
+				"error": err.Error(),
+			}
+			continue
+		}
+
+		repoStats[i] = map[string]interface{}{
+			"name":          repo.Name,
+			"path":          repo.Path,
+			"files":         stats.TotalFiles,
+			"symbols":       stats.TotalSymbols,
+			"last_indexed":  repo.LastIndexedAt,
+		}
+	}
+
+	resultJSON, _ := json.MarshalIndent(map[string]interface{}{
+		"repositories": repoStats,
+		"total_repos":  len(repos),
+		"database":     s.config.Database.Path,
+	}, "", "  ")
+
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleIndex handles repository indexing
+func (s *Server) handleIndex(arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+	var params IndexRepositoryParams
+	paramsJSON, err := json.Marshal(arguments)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal parameters: %v", err)), nil
+	}
+	if err := json.Unmarshal(paramsJSON, &params); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to parse parameters: %v", err)), nil
+	}
+
+	database, err := s.initDatabase()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to open database: %v", err)), nil
+	}
+	defer func() { _ = database.Close() }()
+
+	var repos []*db.Repository
+	if params.Repository != "" {
+		repo, err := database.GetRepositoryByName(params.Repository)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("repository not found: %s", params.Repository)), nil
+		}
+		repos = []*db.Repository{repo}
+	} else {
+		repos, err = database.ListRepositories()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to list repositories: %v", err)), nil
+		}
+	}
+
+	if len(repos) == 0 {
+		return mcp.NewToolResultError("no repositories to index"), nil
+	}
+
+	idx := indexer.New(database, s.config)
+	results := make([]map[string]interface{}, len(repos))
+
+	for i, repo := range repos {
+		err := idx.IndexRepository(context.Background(), repo.ID, repo.Path, params.Full)
+		if err != nil {
+			results[i] = map[string]interface{}{
+				"name":    repo.Name,
+				"success": false,
+				"error":   err.Error(),
+			}
+			continue
+		}
+
+		stats, _ := idx.GetStats(repo.ID)
+		results[i] = map[string]interface{}{
+			"name":    repo.Name,
+			"success": true,
+			"files":   stats.TotalFiles,
+			"symbols": stats.TotalSymbols,
+		}
+	}
+
+	resultJSON, _ := json.MarshalIndent(map[string]interface{}{
+		"results": results,
+		"count":   len(results),
+	}, "", "  ")
+
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleGraphCalls handles call graph queries
+func (s *Server) handleGraphCalls(arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+	var params GraphCallsParams
+	paramsJSON, err := json.Marshal(arguments)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal parameters: %v", err)), nil
+	}
+	if err := json.Unmarshal(paramsJSON, &params); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to parse parameters: %v", err)), nil
+	}
+
+	if params.SymbolName == "" {
+		return mcp.NewToolResultError("symbol_name parameter is required"), nil
+	}
+	if params.Direction == "" {
+		params.Direction = "caller"
+	}
+	if params.Depth <= 0 {
+		params.Depth = 3
+	}
+
+	database, err := s.initDatabase()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to open database: %v", err)), nil
+	}
+	defer func() { _ = database.Close() }()
+
+	gm := graph.New(database)
+
+	var nodes []*graph.CallNode
+	if params.Direction == "caller" {
+		nodes, err = gm.GetCallersTree(params.SymbolName, params.Depth)
+	} else {
+		nodes, err = gm.GetCalleesTree(params.SymbolName, params.Depth)
+	}
+
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to get call graph: %v", err)), nil
+	}
+
+	resultJSON, _ := json.MarshalIndent(map[string]interface{}{
+		"symbol":    params.SymbolName,
+		"direction": params.Direction,
+		"depth":     params.Depth,
+		"nodes":     nodes,
+	}, "", "  ")
+
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleGraphImports handles import graph queries
+func (s *Server) handleGraphImports(arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+	var params GraphImportsParams
+	paramsJSON, err := json.Marshal(arguments)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal parameters: %v", err)), nil
+	}
+	if err := json.Unmarshal(paramsJSON, &params); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to parse parameters: %v", err)), nil
+	}
+
+	if params.FilePath == "" {
+		return mcp.NewToolResultError("file_path parameter is required"), nil
+	}
+	if params.Direction == "" {
+		params.Direction = "dependency"
+	}
+	if params.Depth <= 0 {
+		params.Depth = 3
+	}
+
+	database, err := s.initDatabase()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to open database: %v", err)), nil
+	}
+	defer func() { _ = database.Close() }()
+
+	gm := graph.New(database)
+
+	var nodes []*graph.ImportNode
+	if params.Direction == "importer" {
+		nodes, err = gm.GetImporters(params.FilePath, params.Depth)
+	} else {
+		nodes, err = gm.GetImportDependencies(params.FilePath, params.Depth)
+	}
+
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to get import graph: %v", err)), nil
+	}
+
+	resultJSON, _ := json.MarshalIndent(map[string]interface{}{
+		"file":      params.FilePath,
+		"direction": params.Direction,
+		"depth":     params.Depth,
+		"nodes":     nodes,
+	}, "", "  ")
+
+	return mcp.NewToolResultText(string(resultJSON)), nil
+}
+
+// handleOwnership handles code ownership queries
+func (s *Server) handleOwnership(arguments map[string]interface{}) (*mcp.CallToolResult, error) {
+	var params OwnershipParams
+	paramsJSON, err := json.Marshal(arguments)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal parameters: %v", err)), nil
+	}
+	if err := json.Unmarshal(paramsJSON, &params); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to parse parameters: %v", err)), nil
+	}
+
+	if params.Mode == "" {
+		return mcp.NewToolResultError("mode parameter is required (file, author, or top)"), nil
+	}
+
+	database, err := s.initDatabase()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to open database: %v", err)), nil
+	}
+	defer func() { _ = database.Close() }()
+
+	var resultData interface{}
+
+	switch params.Mode {
+	case "file":
+		if params.File == "" {
+			return mcp.NewToolResultError("file parameter is required for file mode"), nil
+		}
+
+		// Find file by path
+		repos, _ := database.ListRepositories()
+		var fileID int64
+		found := false
+		for _, repo := range repos {
+			file, err := database.GetFileByPath(repo.ID, params.File)
+			if err == nil {
+				fileID = file.ID
+				found = true
+				break
+			}
+		}
+		if !found {
+			return mcp.NewToolResultError(fmt.Sprintf("file not found: %s", params.File)), nil
+		}
+
+		if params.Line > 0 {
+			ownership, err := database.GetOwnershipByLine(fileID, params.Line)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to get ownership: %v", err)), nil
+			}
+			resultData = ownership
+		} else {
+			ownerships, err := database.GetOwnershipByFile(fileID)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to get ownership: %v", err)), nil
+			}
+			resultData = ownerships
+		}
+
+	case "author":
+		if params.Author == "" {
+			return mcp.NewToolResultError("author parameter is required for author mode"), nil
+		}
+		ownerships, err := database.GetOwnershipByAuthor(params.Author)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get ownership: %v", err)), nil
+		}
+		resultData = ownerships
+
+	case "top":
+		limit := params.Limit
+		if limit <= 0 {
+			limit = 10
+		}
+		authors, err := database.GetTopAuthors(limit)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to get top authors: %v", err)), nil
+		}
+		resultData = authors
+
+	default:
+		return mcp.NewToolResultError(fmt.Sprintf("invalid mode: %s (must be file, author, or top)", params.Mode)), nil
+	}
+
+	resultJSON, _ := json.MarshalIndent(map[string]interface{}{
+		"mode": params.Mode,
+		"data": resultData,
+	}, "", "  ")
 
 	return mcp.NewToolResultText(string(resultJSON)), nil
 }

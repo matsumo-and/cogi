@@ -19,10 +19,25 @@ var mcpCmd = &cobra.Command{
 The server uses stdio transport and can be integrated with MCP clients like Claude Desktop.
 
 Available tools:
-  - cogi_search_symbol:   Search for code symbols by name or kind
-  - cogi_search_keyword:  Full-text keyword search using SQLite FTS5
-  - cogi_search_semantic: Semantic search using vector embeddings
-  - cogi_search_hybrid:   Hybrid search combining keyword and semantic
+  Search:
+    - cogi_search_symbol:      Search for code symbols by name or kind
+    - cogi_search_keyword:     Full-text keyword search using SQLite FTS5
+    - cogi_search_semantic:    Semantic search using vector embeddings
+    - cogi_search_hybrid:      Hybrid search combining keyword and semantic
+
+  Repository Management:
+    - cogi_add_repository:     Add a repository to the index
+    - cogi_remove_repository:  Remove a repository from the index
+    - cogi_list_repositories:  List all indexed repositories
+    - cogi_status:             Get status and statistics
+
+  Indexing:
+    - cogi_index:              Build or update code index
+
+  Code Analysis:
+    - cogi_graph_calls:        Get call graph (callers/callees)
+    - cogi_graph_imports:      Get import graph (dependencies)
+    - cogi_ownership:          Query code ownership based on git blame
 
 Example Claude Desktop configuration (~/.config/Claude/claude_desktop_config.json):
   {
