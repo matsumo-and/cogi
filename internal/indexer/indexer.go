@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/matsumo_and/cogi/internal/config"
@@ -172,6 +171,9 @@ func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath strin
 		maxWorkers = 4
 	}
 
+	// Progress tracking
+	progress := NewProgressBar(int64(len(files)), "Indexing files")
+
 	// Create worker pool
 	jobs := make(chan string, len(files))
 	results := make(chan error, len(files))
@@ -191,6 +193,7 @@ func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath strin
 				default:
 					err := idx.indexFile(ctx, repoID, repoPath, filePath, fullIndex)
 					results <- err
+					progress.Increment()
 				}
 			}
 		}()
@@ -213,6 +216,8 @@ func (idx *Indexer) indexFiles(ctx context.Context, repoID int64, repoPath strin
 			errors = append(errors, err)
 		}
 	}
+
+	progress.Finish()
 
 	// Update repository last_indexed_at
 	if err := idx.db.UpdateRepositoryIndexedAt(repoID); err != nil {
@@ -652,25 +657,7 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 	fmt.Printf("Processing %d batches with %d workers...\n", len(batches), numWorkers)
 
 	// Progress tracking
-	var completed atomic.Int64
-	totalBatches := int64(len(batches))
-	printProgress := func(current, total int64) {
-		percent := float64(current) * 100.0 / float64(total)
-		barWidth := 40
-		filled := int(float64(barWidth) * float64(current) / float64(total))
-
-		var bar string
-		if filled > 0 {
-			bar = strings.Repeat("█", filled-1) + strings.Repeat("░", barWidth-filled)
-		} else {
-			bar = strings.Repeat("░", barWidth)
-		}
-
-		fmt.Printf("\r[%s] %d/%d (%.1f%%)", bar, current, total, percent)
-	}
-
-	// Show initial progress (0%)
-	printProgress(0, totalBatches)
+	progress := NewProgressBar(int64(len(batches)), "")
 
 	// Create worker pool for batch processing
 	batchJobs := make(chan []embeddingTask, len(batches))
@@ -783,8 +770,7 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 					batchResults <- nil
 
 					// Update progress
-					current := completed.Add(1)
-					printProgress(current, totalBatches)
+					progress.Increment()
 				}
 			}
 		}(w)
@@ -812,7 +798,7 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 		return fmt.Errorf("embedding generation completed with %d errors: %v", len(errors), errors[0])
 	}
 
-	fmt.Println() // Move to new line after progress display
+	progress.Finish()
 	fmt.Printf("✓ Generated %d embeddings successfully\n", len(tasks))
 	return nil
 }
@@ -973,6 +959,8 @@ func (idx *Indexer) analyzeOwnership(ctx context.Context, repoID int64, repoPath
 
 	fmt.Printf("Analyzing ownership for %d files...\n", len(files))
 
+	progress := NewProgressBar(int64(len(files)), "Analyzing ownership")
+
 	var successCount int
 	var errorCount int
 
@@ -984,10 +972,13 @@ func (idx *Indexer) analyzeOwnership(ctx context.Context, repoID int64, repoPath
 		if err := idx.ownershipAnalyzer.AnalyzeFile(ctx, repoPath, absPath, file.ID); err != nil {
 			// Don't fail the entire operation for a single file
 			errorCount++
-			continue
+		} else {
+			successCount++
 		}
-		successCount++
+		progress.Increment()
 	}
+
+	progress.Finish()
 
 	if errorCount > 0 {
 		fmt.Printf("✓ Analyzed %d files, %d errors\n", successCount, errorCount)
