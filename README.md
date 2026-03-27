@@ -52,7 +52,22 @@ curl -L -o cogi.exe https://github.com/matsumo-and/cogi/releases/latest/download
 # Move to a directory in your PATH, e.g., C:\Program Files\cogi\
 ```
 
-#### Option 2: Build from Source
+**macOS Security Note:**
+
+If you see the message "Apple cannot verify that this app is free from malware", this is because the binary is not notarized. You can safely bypass this warning:
+
+**Option A: Remove the quarantine attribute (Recommended)**
+```bash
+xattr -d com.apple.quarantine /usr/local/bin/cogi
+```
+
+**Option B: Allow in System Settings**
+1. Try to run `cogi` in Terminal
+2. Open **System Settings** > **Privacy & Security**
+3. Scroll down and click **"Allow Anyway"** next to the cogi message
+4. Run `cogi` again and click **"Open"**
+
+#### Option 2: Build from Source (Most Secure)
 
 ```bash
 # Clone the repository
