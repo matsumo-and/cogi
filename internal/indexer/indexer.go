@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/matsumo_and/cogi/internal/config"
@@ -650,6 +651,27 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 
 	fmt.Printf("Processing %d batches with %d workers...\n", len(batches), numWorkers)
 
+	// Progress tracking
+	var completed atomic.Int64
+	totalBatches := int64(len(batches))
+	printProgress := func(current, total int64) {
+		percent := float64(current) * 100.0 / float64(total)
+		barWidth := 40
+		filled := int(float64(barWidth) * float64(current) / float64(total))
+
+		var bar string
+		if filled > 0 {
+			bar = strings.Repeat("█", filled-1) + strings.Repeat("░", barWidth-filled)
+		} else {
+			bar = strings.Repeat("░", barWidth)
+		}
+
+		fmt.Printf("\r[%s] %d/%d (%.1f%%)", bar, current, total, percent)
+	}
+
+	// Show initial progress (0%)
+	printProgress(0, totalBatches)
+
 	// Create worker pool for batch processing
 	batchJobs := make(chan []embeddingTask, len(batches))
 	batchResults := make(chan error, len(batches))
@@ -759,6 +781,10 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 					}
 
 					batchResults <- nil
+
+					// Update progress
+					current := completed.Add(1)
+					printProgress(current, totalBatches)
 				}
 			}
 		}(w)
@@ -786,6 +812,7 @@ func (idx *Indexer) generateEmbeddings(ctx context.Context, repoID int64) error 
 		return fmt.Errorf("embedding generation completed with %d errors: %v", len(errors), errors[0])
 	}
 
+	fmt.Println() // Move to new line after progress display
 	fmt.Printf("✓ Generated %d embeddings successfully\n", len(tasks))
 	return nil
 }
