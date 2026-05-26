@@ -1,27 +1,22 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/matsumo_and/cogi/internal/config"
 	"github.com/matsumo_and/cogi/internal/db"
-	"github.com/matsumo_and/cogi/internal/embedding"
-	"github.com/matsumo_and/cogi/internal/search"
 	"github.com/spf13/cobra"
 )
 
 var searchCmd = &cobra.Command{
 	Use:   "search",
 	Short: "Search code using various methods",
-	Long: `Search code using symbol search, keyword search, or semantic search.
+	Long: `Search code using symbol search or keyword search.
 
 Use subcommands to specify the search method:
-  - symbol:   Search for symbols (functions, classes, variables)
-  - keyword:  Full-text search using SQLite FTS5
-  - semantic: Semantic search using vector embeddings
-  - hybrid:   Hybrid search combining keyword and semantic search`,
+  - symbol:  Search for symbols (functions, classes, variables)
+  - keyword: Full-text search using SQLite FTS5`,
 }
 
 // Symbol search
@@ -166,175 +161,6 @@ var searchKeywordCmd = &cobra.Command{
 	},
 }
 
-// Semantic search
-var (
-	semanticGranularity string
-	semanticLimit       int
-	semanticLang        string
-	semanticRepo        string
-)
-
-// Hybrid search
-var (
-	hybridKind      string
-	hybridLimit     int
-	hybridLang      string
-	hybridRepo      string
-	hybridKwWeight  float64
-	hybridSemWeight float64
-)
-
-var searchHybridCmd = &cobra.Command{
-	Use:   "hybrid <query>",
-	Short: "Hybrid search combining keyword and semantic search",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		query := args[0]
-
-		// Load config
-		cfg, err := config.Load("")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Open database
-		database, err := db.Open(cfg.Database.Path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
-			os.Exit(1)
-		}
-		defer func() { _ = database.Close() }()
-
-		// Initialize Ollama embedding client
-		embedClient := embedding.NewOllamaClient(
-			cfg.Embedding.Endpoint,
-			cfg.Embedding.Model,
-			cfg.Embedding.Dimension,
-		)
-
-		// Create searchers
-		ctx := context.Background()
-		keywordSearcher := search.NewKeywordSearcher(database)
-		semanticSearcher := search.NewSemanticSearcher(database, embedClient)
-		hybridSearcher := search.NewHybridSearcher(keywordSearcher, semanticSearcher)
-
-		// Perform hybrid search
-		results, err := hybridSearcher.Search(ctx, search.HybridSearchOptions{
-			Query:          query,
-			SymbolKind:     hybridKind,
-			Language:       hybridLang,
-			Repository:     hybridRepo,
-			Limit:          hybridLimit,
-			KeywordWeight:  float32(hybridKwWeight),
-			SemanticWeight: float32(hybridSemWeight),
-		})
-
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error performing hybrid search: %v\n", err)
-			fmt.Println("\n⚠️  Make sure Ollama is running:")
-			fmt.Println("   ollama serve")
-			fmt.Printf("   ollama pull %s\n", cfg.Embedding.Model)
-			os.Exit(1)
-		}
-
-		if len(results) == 0 {
-			fmt.Println("\nNo results found.")
-			fmt.Println("\nℹ️  Note: You need to build embeddings first:")
-			fmt.Println("   cogi index")
-			return
-		}
-
-		fmt.Printf("\n━━━ Found %d result(s) ━━━\n", len(results))
-		fmt.Printf("(Keyword weight: %.1f, Semantic weight: %.1f)\n\n", hybridKwWeight, hybridSemWeight)
-
-		for i, result := range results {
-			fmt.Printf("%d. %s (%s) - Score: %.4f\n", i+1, result.SymbolName, result.SymbolKind, result.Score)
-			fmt.Printf("   %s:%d\n", result.FilePath, result.StartLine)
-			if result.Signature != "" {
-				fmt.Printf("   %s\n", result.Signature)
-			}
-			if result.Docstring != "" {
-				fmt.Printf("   %s\n", result.Docstring)
-			}
-			fmt.Println()
-		}
-	},
-}
-
-var searchSemanticCmd = &cobra.Command{
-	Use:   "semantic <query>",
-	Short: "Semantic search using vector embeddings",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		query := args[0]
-
-		// Load config
-		cfg, err := config.Load("")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Open database
-		database, err := db.Open(cfg.Database.Path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
-			os.Exit(1)
-		}
-		defer func() { _ = database.Close() }()
-
-		// Initialize Ollama embedding client
-		embedClient := embedding.NewOllamaClient(
-			cfg.Embedding.Endpoint,
-			cfg.Embedding.Model,
-			cfg.Embedding.Dimension,
-		)
-
-		// Create semantic searcher (SQLite-based vector search)
-		ctx := context.Background()
-		searcher := search.NewSemanticSearcher(database, embedClient)
-
-		// Perform semantic search
-		results, err := searcher.Search(ctx, search.SemanticSearchOptions{
-			Query:       query,
-			Granularity: semanticGranularity,
-			Language:    semanticLang,
-			Repository:  semanticRepo,
-			Limit:       semanticLimit,
-		})
-
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error performing semantic search: %v\n", err)
-			fmt.Println("\n⚠️  Make sure Ollama is running:")
-			fmt.Println("   ollama serve")
-			fmt.Printf("   ollama pull %s\n", cfg.Embedding.Model)
-			os.Exit(1)
-		}
-
-		if len(results) == 0 {
-			fmt.Println("\nNo results found.")
-			fmt.Println("\nℹ️  Note: You need to build embeddings first:")
-			fmt.Println("   cogi index --embeddings")
-			return
-		}
-
-		fmt.Printf("\n━━━ Found %d result(s) ━━━\n\n", len(results))
-
-		for i, result := range results {
-			fmt.Printf("%d. %s (%s) - Score: %.4f\n", i+1, result.SymbolName, result.SymbolKind, result.Score)
-			fmt.Printf("   %s:%d\n", result.FilePath, result.StartLine)
-			if result.Signature != "" {
-				fmt.Printf("   %s\n", result.Signature)
-			}
-			if result.Docstring != "" {
-				fmt.Printf("   %s\n", result.Docstring)
-			}
-			fmt.Println()
-		}
-	},
-}
-
 func init() {
 	rootCmd.AddCommand(searchCmd)
 
@@ -347,20 +173,4 @@ func init() {
 	searchCmd.AddCommand(searchKeywordCmd)
 	searchKeywordCmd.Flags().StringVarP(&keywordLang, "lang", "l", "", "Filter by language")
 	searchKeywordCmd.Flags().StringVarP(&keywordRepo, "repo", "r", "", "Filter by repository")
-
-	// Semantic search
-	searchCmd.AddCommand(searchSemanticCmd)
-	searchSemanticCmd.Flags().StringVarP(&semanticGranularity, "granularity", "g", "", "Search granularity (class or function, empty for both)")
-	searchSemanticCmd.Flags().IntVarP(&semanticLimit, "limit", "n", 10, "Maximum number of results")
-	searchSemanticCmd.Flags().StringVarP(&semanticLang, "lang", "l", "", "Filter by language")
-	searchSemanticCmd.Flags().StringVarP(&semanticRepo, "repo", "r", "", "Filter by repository")
-
-	// Hybrid search
-	searchCmd.AddCommand(searchHybridCmd)
-	searchHybridCmd.Flags().StringVarP(&hybridKind, "kind", "k", "", "Filter by symbol kind (function, class, etc.)")
-	searchHybridCmd.Flags().IntVarP(&hybridLimit, "limit", "n", 10, "Maximum number of results")
-	searchHybridCmd.Flags().StringVarP(&hybridLang, "lang", "l", "", "Filter by language")
-	searchHybridCmd.Flags().StringVarP(&hybridRepo, "repo", "r", "", "Filter by repository")
-	searchHybridCmd.Flags().Float64Var(&hybridKwWeight, "kw-weight", 0.3, "Keyword search weight (0.0-1.0)")
-	searchHybridCmd.Flags().Float64Var(&hybridSemWeight, "sem-weight", 0.7, "Semantic search weight (0.0-1.0)")
 }

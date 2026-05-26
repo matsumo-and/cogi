@@ -15,26 +15,6 @@ type KeywordSearchParams struct {
 	Limit      int    `json:"limit,omitempty"`
 }
 
-// SemanticSearchParams represents input parameters for semantic search
-type SemanticSearchParams struct {
-	Query       string `json:"query"`
-	Granularity string `json:"granularity,omitempty"`
-	Language    string `json:"language,omitempty"`
-	Repository  string `json:"repository,omitempty"`
-	Limit       int    `json:"limit,omitempty"`
-}
-
-// HybridSearchParams represents input parameters for hybrid search
-type HybridSearchParams struct {
-	Query          string  `json:"query"`
-	Kind           string  `json:"kind,omitempty"`
-	Language       string  `json:"language,omitempty"`
-	Repository     string  `json:"repository,omitempty"`
-	Limit          int     `json:"limit,omitempty"`
-	KeywordWeight  float64 `json:"keyword_weight,omitempty"`
-	SemanticWeight float64 `json:"semantic_weight,omitempty"`
-}
-
 // AddRepositoryParams represents input parameters for adding a repository
 type AddRepositoryParams struct {
 	Name string `json:"name,omitempty"`

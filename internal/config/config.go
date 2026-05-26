@@ -11,7 +11,6 @@ import (
 // Config represents the application configuration
 type Config struct {
 	Database    DatabaseConfig    `mapstructure:"database"`
-	Embedding   EmbeddingConfig   `mapstructure:"embedding"`
 	Indexing    IndexingConfig    `mapstructure:"indexing"`
 	Performance PerformanceConfig `mapstructure:"performance"`
 }
@@ -21,15 +20,6 @@ type DatabaseConfig struct {
 	Path        string `mapstructure:"path"`
 	WALMode     bool   `mapstructure:"wal_mode"`
 	CacheSizeMB int    `mapstructure:"cache_size_mb"`
-}
-
-// EmbeddingConfig contains embedding model settings
-type EmbeddingConfig struct {
-	Provider  string `mapstructure:"provider"`
-	Model     string `mapstructure:"model"`
-	Endpoint  string `mapstructure:"endpoint"`
-	Dimension int    `mapstructure:"dimension"`
-	BatchSize int    `mapstructure:"batch_size"`
 }
 
 // IndexingConfig contains indexing settings
@@ -111,13 +101,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.path", filepath.Join(cogiDir, "data.db"))
 	v.SetDefault("database.wal_mode", true)
 	v.SetDefault("database.cache_size_mb", 256)
-
-	// Embedding defaults
-	v.SetDefault("embedding.provider", "ollama")
-	v.SetDefault("embedding.model", "mxbai-embed-large")
-	v.SetDefault("embedding.endpoint", "http://localhost:11434")
-	v.SetDefault("embedding.dimension", 1024)
-	v.SetDefault("embedding.batch_size", 32)
 
 	// Indexing defaults
 	v.SetDefault("indexing.max_file_size_mb", 10)
