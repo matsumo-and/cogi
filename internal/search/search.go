@@ -138,41 +138,6 @@ func placeholders(n int) string {
 	return strings.Join(parts, ", ")
 }
 
-func scanResults(rows *sql.Rows) ([]Result, error) {
-	results := []Result{}
-
-	for rows.Next() {
-		var r Result
-
-		err := rows.Scan(
-			&r.SymbolID,
-			&r.SymbolName,
-			&r.SymbolKind,
-			&r.FilePath,
-			&r.Language,
-			&r.StartLine,
-			&r.StartColumn,
-			&r.EndLine,
-			&r.EndColumn,
-			&r.Signature,
-			&r.Docstring,
-			&r.CodeBody,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan result: %w", err)
-		}
-
-		results = append(results, r)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating results: %w", err)
-	}
-
-	return results, nil
-}
-
 func scanKeywordResults(rows *sql.Rows) ([]Result, error) {
 	results := []Result{}
 
